@@ -7,8 +7,8 @@ systems:
     paths: [src/cli.ts]
   - id: engine
     name: Engine
-    description: Snapshots, parsing, resolution, the graph, diffs, rules and plans.
-    paths: [src/config.ts, src/source.ts, src/parse.ts, src/resolve.ts, src/graph.ts, src/diff.ts, src/rules.ts, src/types.ts, src/context.ts, src/plan.ts]
+    description: Snapshots, parsing, resolution, the graph, diffs, footprints, rules and plans.
+    paths: [src/config.ts, src/source.ts, src/parse.ts, src/resolve.ts, src/graph.ts, src/diff.ts, src/rules.ts, src/types.ts, src/context.ts, src/plan.ts, src/footprint.ts]
   - id: lang
     name: Language adapters
     description: Per-language lexers, extractors and resolvers.

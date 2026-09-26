@@ -56,7 +56,7 @@ export async function buildModel(source: Source, config: Config, cache: ParseCac
   const files: Record<string, FileInfo> = {};
   const edges: FileEdge[] = [];
   const externals: ExternalUse[] = [];
-  const seenExternal = new Set<string>();
+  const seenExternal = new Map<string, ExternalUse>();
 
   for (const [p, { hash }] of parsed) {
     const { system, module } = assigner.assign(p);
@@ -67,12 +67,18 @@ export async function buildModel(source: Source, config: Config, cache: ParseCac
     parsed: new Map([...parsed].map(([p, v]) => [p, v.pf])),
     manifests: new Map(manifestFiles.map((p) => [p, meta.get(p) ?? ""])),
   });
-  const addExternal = (file: string, pkg: string) => {
+  const addExternal = (file: string, pkg: string, typeOnly: boolean, kind: string) => {
     const key = `${file}\0${pkg}`;
-    if (!seenExternal.has(key)) {
-      seenExternal.add(key);
-      externals.push({ file, pkg });
+    const dynamic = kind === "dynamic";
+    const seen = seenExternal.get(key);
+    if (seen) {
+      if (!typeOnly) delete seen.typeOnly;
+      if (!dynamic) delete seen.dynamic;
+      return;
     }
+    const use: ExternalUse = { file, pkg, ...(typeOnly ? { typeOnly } : {}), ...(dynamic ? { dynamic } : {}) };
+    seenExternal.set(key, use);
+    externals.push(use);
   };
   for (const [p, { pf }] of parsed) {
     const merged = new Map<string, FileEdge>();
@@ -94,13 +100,13 @@ export async function buildModel(source: Source, config: Config, cache: ParseCac
     if (!pf.lang) {
       for (const imp of pf.imports) {
         const r = resolver.resolve(p, imp.spec);
-        if (r.kind === "external") addExternal(p, r.pkg);
+        if (r.kind === "external") addExternal(p, r.pkg, imp.typeOnly, imp.kind);
         else if (r.kind === "file") add(r.path, imp.names, imp.typeOnly, imp.kind, "exact");
       }
     } else {
       for (const imp of pf.imports) {
         const r = project.resolve(p, pf, imp);
-        if (r.external) addExternal(p, r.external);
+        if (r.external) addExternal(p, r.external, imp.typeOnly, imp.kind);
         for (const t of r.targets) add(t.path, t.names ?? imp.names, imp.typeOnly, imp.kind, t.confidence);
       }
       for (const t of project.references(p, pf)) {

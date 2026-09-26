@@ -3,6 +3,7 @@ import { findings, headline, type Finding } from "./describe.js";
 import { diffModels } from "./diff.js";
 import { aggregate } from "./graph.js";
 import { systemLayout, type Layout } from "./layout.js";
+import { detectEntries, type Entry } from "./footprint.js";
 import { loadPlan, type Plan } from "./plan.js";
 import type { AggEdge, Config, Delta, FileEdge, Model } from "./types.js";
 
@@ -51,6 +52,8 @@ export interface CompactGraph {
   module: string[];
   /** [fromIndex, toIndex, names joined by ",", flags: 1 = type-only, 2 = dynamic, 4 = re-export] */
   edges: [number, number, string, number][];
+  /** npm packages each file imports: [fileIndex, package, flags: 1 = type-only, 2 = dynamic] */
+  ext: [number, string, number][];
 }
 
 export interface MapState {
@@ -65,6 +68,8 @@ export interface MapState {
   note?: string;
   /** Dependencies someone intends to add (.faultline/plan.yml). */
   plan: Plan;
+  /** Files the repo's manifests start from, for the footprint view. */
+  entries: Entry[];
 }
 
 export function systemViews(model: Model, config: Config): SystemView[] {
@@ -114,7 +119,19 @@ export function compactGraph(model: Model): CompactGraph {
     system: paths.map((p) => model.files[p].system),
     module: paths.map((p) => model.files[p].module),
     edges: model.edges.map((e) => [index.get(e.from)!, index.get(e.to)!, e.names.join(","), (e.typeOnly ? 1 : 0) | (e.kind === "dynamic" ? 2 : 0) | (e.kind === "reexport" ? 4 : 0)]),
+    ext: model.externals.filter((u) => index.has(u.file)).map((u) => [index.get(u.file)!, u.pkg, (u.typeOnly ? 1 : 0) | (u.dynamic ? 2 : 0)]),
   };
+}
+
+// Manifests rarely change during a session; reading them on every rebuild would walk the tree each time.
+const entryCache = new Map<string, { key: string; entries: Entry[] }>();
+function entriesFor(root: string, files: string[]): Entry[] {
+  const key = String(files.length);
+  const hit = entryCache.get(root);
+  if (hit && hit.key === key) return hit.entries;
+  const entries = detectEntries(root, files);
+  entryCache.set(root, { key, entries });
+  return entries;
 }
 
 const sameEdges = (a: AggEdge[] | undefined, b: AggEdge[] | undefined) =>
@@ -170,6 +187,7 @@ export async function buildState(opts: {
     snapshots,
     graph: compactGraph(models[models.length - 1].model),
     plan: loadPlan(opts.root),
+    entries: entriesFor(opts.root, Object.keys(models[models.length - 1].model.files)),
   };
   return state;
 }

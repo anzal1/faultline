@@ -31,6 +31,8 @@ For agents (compact answers, a few hundred tokens each):
                                      Register the MCP server, hooks, AGENTS.md and a pre-commit hook
   fault mcp                          MCP server over stdio: tools map, place, check, plan
   fault overview [system]            The architecture in one screen
+  fault footprint [entry]            What an entry loads at startup, and where to cut it
+        no entry: list the entries in package.json, main.go, main.rs...  --why <pkg>  --format json
   fault place <path> [imports...]    Which system a path belongs to and what it may import
   fault plan ["a -> b: why"] [--remove "a -> b"]   Declare intended new dependencies
   fault hook --agent <name>          Hook entry point for Claude Code, Codex, Copilot, Cursor
@@ -44,7 +46,7 @@ export interface Args {
 
 export function parseArgs(argv: string[]): Args {
   const out: Args = { _: [], flags: {} };
-  const valued = new Set(["format", "out", "o", "base", "port", "max", "target", "label", "head", "title", "worktree", "map-url", "note", "agent", "remove", "cwd"]);
+  const valued = new Set(["why", "format", "out", "o", "base", "port", "max", "target", "label", "head", "title", "worktree", "map-url", "note", "agent", "remove", "cwd"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--")) {
@@ -188,6 +190,58 @@ async function cmdSystems() {
   }
 }
 
+async function cmdFootprint(args: Args) {
+  const { detectEntries, footprint } = await import("./footprint.js");
+  const ws = Workspace.open();
+  const model = await ws.model(undefined);
+  const files = Object.keys(model.files);
+  const entries = detectEntries(ws.root, files);
+  const want = args._[0];
+  const json = args.flags.format === "json";
+  if (!want) {
+    if (json) return console.log(JSON.stringify(entries));
+    if (!entries.length) return console.log("No entries found in the manifests. Pass a file: fault footprint src/main.ts");
+    for (const e of entries) console.log(`${e.label.padEnd(36)} ${dim(e.path)}`);
+    return;
+  }
+  const asPath = path.relative(ws.root, path.resolve(process.cwd(), want)).split(path.sep).join("/");
+  const entry = model.files[asPath] ? asPath : model.files[want] ? want : (entries.find((e) => e.label === want) ?? entries.filter((e) => e.label.endsWith(want)).sort((a, b) => a.label.length - b.label.length)[0])?.path;
+  if (!entry) {
+    console.error(`No file or entry named "${want}". Run \`fault footprint\` to list the entries.`);
+    process.exit(1);
+  }
+  const fp = footprint(model, entry);
+  if (json) return console.log(JSON.stringify({ ...fp, startup: fp.startup.length, onDemand: fp.onDemand.length, startupFiles: fp.startup }));
+  const systems = Object.entries(fp.bySystem).filter(([, v]) => v.startup || v.onDemand).sort((a, b) => b[1].startup - a[1].startup);
+  const label = entries.find((e) => e.path === entry)?.label;
+  // Paths print relative to the folder every loaded file shares, so the lists stay readable.
+  const prefix = fp.startup.reduce((p, f) => { while (p && !f.startsWith(p)) p = p.slice(0, p.slice(0, -1).lastIndexOf("/") + 1); return p; }, entry.slice(0, entry.lastIndexOf("/") + 1));
+  const short = (f: string) => (prefix && f.startsWith(prefix) ? f.slice(prefix.length) : f);
+  console.log(`${bold(label ?? entry)}${label ? dim(`  ${entry}`) : ""}`);
+  console.log(`Loads ${bold(String(fp.startup.length))} files at startup across ${systems.filter(([, v]) => v.startup).length} systems${fp.onDemand.length ? `, ${fp.onDemand.length} more on demand` : ""}.`);
+  for (const [id, v] of systems) console.log(`  ${systemName(ws.config, id).padEnd(26)} ${String(v.startup).padStart(4)} of ${v.total}${v.onDemand ? dim(`  +${v.onDemand} on demand`) : ""}`);
+  if (fp.packages.length) console.log(`npm at startup: ${fp.packages.join(", ")}`);
+  if (fp.cuts.length) {
+    console.log(`\nCut points${prefix ? dim(` (paths under ${prefix})`) : ""}: stop importing the file and this many files stop loading at startup`);
+    // The top cuts by size, plus every cut that takes an npm package off the startup path.
+    for (const c of fp.cuts.filter((c, i) => i < (args.flags.verbose ? 12 : 6) || c.packages.length)) {
+      const by = c.importers.slice(0, 3).map((i) => `${short(i.file)}${i.names.length ? ` {${i.names.slice(0, 3).join(", ")}}` : ""}`).join(", ") + (c.importers.length > 3 ? ` and ${c.importers.length - 3} more` : "");
+      console.log(`  ${String(c.drops).padStart(4)}  ${short(c.file)}${c.packages.length ? yellow(`  drops ${c.packages.join(", ")}`) : ""}\n        ${dim(`imported by ${by}`)}`);
+    }
+  }
+  const why = typeof args.flags.why === "string" ? args.flags.why : undefined;
+  if (why) {
+    const { chainTo } = await import("./footprint.js");
+    const users = model.externals.filter((u) => u.pkg === why && !u.typeOnly && !u.dynamic && fp.startup.includes(u.file));
+    console.log(`\nWhy ${bold(why)} loads at startup${users.length ? "" : ": it does not"}`);
+    const names = new Map(model.edges.map((e) => [`${e.from}\0${e.to}`, e.names]));
+    for (const u of users) {
+      const chain = chainTo(model, entry, u.file);
+      console.log(`  ${chain.map((f, i) => (i ? `${short(f)}${dim(` {${(names.get(`${chain[i - 1]}\0${f}`) ?? []).slice(0, 3).join(", ")}}`)}` : short(f))).join(dim(" > "))}`);
+    }
+  }
+}
+
 async function main() {
   let argv = process.argv.slice(2);
   // `fault -C <dir> <command>` runs as if started in <dir>, like git -C.
@@ -208,6 +262,8 @@ async function main() {
       return cmdSystems();
     case "overview":
       return cmdOverview(args);
+    case "footprint":
+      return cmdFootprint(args);
     case "place":
       return cmdPlace(args);
     case "plan":

@@ -19,6 +19,8 @@
     transform: { x: 0, y: 0, k: 1 },
     fitted: "",
     followLive: true,
+    fp: null, // footprint of one entry file, see computeFootprint
+    fpChain: null, // files on the chain being explained: { files: Set<index> }
   };
 
   // ---------- tiny DOM helpers ----------
@@ -161,11 +163,153 @@
     return -1;
   }
 
+  // ---------- footprint ----------
+  /**
+   * What loads when `entryPath` is imported, from the latest graph: files reached by static,
+   * non-type imports load at startup; files reached only through import() load on demand.
+   * Cut points come from the dominator tree: every startup path to a file passes through its
+   * dominators, so no longer importing one drops its whole subtree.
+   */
+  function computeFootprint(entryPath) {
+    const g = S.graph;
+    const ei = g ? binarySearch(g.paths, entryPath) : -1;
+    if (ei < 0) return null;
+    const n = g.paths.length;
+    const out = Array.from({ length: n }, () => []);
+    const lazy = Array.from({ length: n }, () => []);
+    const names = new Map();
+    for (const [a, b, nm, fl] of g.edges) {
+      if (fl & 1) continue;
+      if (fl & 2) lazy[a].push(b);
+      else { out[a].push(b); names.set(a * n + b, nm); }
+    }
+    // Breadth first, so the parent chain is a shortest "why does this load".
+    const parent = new Int32Array(n).fill(-2);
+    parent[ei] = -1;
+    const order = [ei];
+    for (let i = 0; i < order.length; i++) for (const t of out[order[i]]) if (parent[t] === -2) { parent[t] = order[i]; order.push(t); }
+    const startup = new Set(order);
+    const later = new Set();
+    const queue = [];
+    for (const f of order) for (const t of lazy[f]) if (!startup.has(t)) queue.push(t);
+    while (queue.length) {
+      const f = queue.pop();
+      if (startup.has(f) || later.has(f)) continue;
+      later.add(f);
+      for (const t of out[f]) queue.push(t);
+      for (const t of lazy[f]) queue.push(t);
+    }
+    const bySys = new Map(), byMod = new Map();
+    const bump = (map, k, field) => { const c = map.get(k) || map.set(k, { startup: 0, onDemand: 0, total: 0 }).get(k); c[field]++; };
+    for (let i = 0; i < n; i++) {
+      bump(bySys, g.system[i], "total"); bump(byMod, g.module[i], "total");
+      if (startup.has(i)) { bump(bySys, g.system[i], "startup"); bump(byMod, g.module[i], "startup"); }
+      else if (later.has(i)) { bump(bySys, g.system[i], "onDemand"); bump(byMod, g.module[i], "onDemand"); }
+    }
+    const sysPairs = new Set(), modPairs = new Set();
+    for (const f of order) for (const t of out[f]) {
+      if (g.system[f] !== g.system[t]) sysPairs.add(key(g.system[f], g.system[t]));
+      if (g.module[f] !== g.module[t]) modPairs.add(key(g.module[f], g.module[t]));
+    }
+    const pkgs = new Map();
+    for (const [fi, pkg, fl] of g.ext || []) {
+      if (fl || !startup.has(fi) || pkg.startsWith("virtual:")) continue;
+      (pkgs.get(pkg) || pkgs.set(pkg, []).get(pkg)).push(fi);
+    }
+    const idom = dominators(ei, order, out, startup);
+    const kids = new Map();
+    for (const f of order) if (f !== ei) (kids.get(idom[f]) || kids.set(idom[f], []).get(idom[f])).push(f);
+    const subtree = (f) => { const all = [f]; for (let i = 0; i < all.length; i++) for (const k of kids.get(all[i]) || []) all.push(k); return all; };
+    const importers = new Map();
+    for (const f of order) for (const t of out[f]) (importers.get(t) || importers.set(t, []).get(t)).push(f);
+    const candidates = order.filter((f) => f !== ei).map((f) => ({ f, drops: subtree(f) })).filter((c) => c.drops.length >= 2 && c.drops.length <= order.length * 0.5).sort((a, b) => b.drops.length - a.drops.length);
+    const covered = new Set();
+    const cuts = [];
+    for (const c of candidates) {
+      if (covered.has(c.f)) continue;
+      c.drops.forEach((x) => covered.add(x));
+      const dropped = new Set(c.drops);
+      const lost = [...pkgs].filter(([, users]) => users.every((u) => dropped.has(u))).map(([p]) => p).sort();
+      cuts.push({ file: c.f, drops: c.drops, packages: lost, importers: importers.get(c.f) || [] });
+      if (cuts.length >= 12) break;
+    }
+    const label = (S.entries || []).find((e) => e.path === entryPath)?.label || "";
+    return { entry: entryPath, ei, label, startup, later, parent, idom, names, n, bySys, byMod, sysPairs, modPairs, pkgs, cuts, importers };
+  }
+
+  /** Immediate dominators over the startup subgraph (Cooper, Harvey and Kennedy). */
+  function dominators(entry, nodes, out, inSet) {
+    const rpo = [];
+    const seen = new Set([entry]);
+    const stack = [[entry, 0]];
+    while (stack.length) {
+      const top = stack[stack.length - 1];
+      const next = out[top[0]];
+      if (top[1] < next.length) {
+        const t = next[top[1]++];
+        if (inSet.has(t) && !seen.has(t)) { seen.add(t); stack.push([t, 0]); }
+      } else { rpo.push(top[0]); stack.pop(); }
+    }
+    rpo.reverse();
+    const index = new Map(rpo.map((f, i) => [f, i]));
+    const preds = new Map();
+    for (const f of rpo) for (const t of out[f]) if (index.has(t)) (preds.get(t) || preds.set(t, []).get(t)).push(f);
+    const idom = {};
+    idom[entry] = entry;
+    const meet = (a, b) => {
+      while (a !== b) {
+        while (index.get(a) > index.get(b)) a = idom[a];
+        while (index.get(b) > index.get(a)) b = idom[b];
+      }
+      return a;
+    };
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const f of rpo) {
+        if (f === entry) continue;
+        let d;
+        for (const p of preds.get(f) || []) if (idom[p] !== undefined) d = d === undefined ? p : meet(p, d);
+        if (d !== undefined && idom[f] !== d) { idom[f] = d; changed = true; }
+      }
+    }
+    return idom;
+  }
+
+  /** The shortest startup chain from the entry to a file, as indexes. */
+  function chainOf(fp, f) {
+    const chain = [];
+    for (let c = f; c >= 0; c = fp.parent[c]) chain.unshift(c);
+    return fp.parent[f] === -2 ? [] : chain;
+  }
+  function setFootprint(path) {
+    ui.fp = path ? computeFootprint(path) : null;
+    ui.fpChain = null;
+    ui.sel = null;
+    render();
+  }
+  function explainPkg(pkg) {
+    const users = ui.fp.pkgs.get(pkg) || [];
+    ui.fpChain = { files: new Set(users.flatMap((u) => chainOf(ui.fp, u))) };
+    select({ type: "fp-pkg", pkg });
+  }
+  function explain(f) {
+    ui.fpChain = { files: new Set(chainOf(ui.fp, f)) };
+    select({ type: "fp-file", file: f });
+  }
+  const fpOf = (map, id) => (ui.fp ? map.get(id) || { startup: 0, onDemand: 0, total: 0 } : null);
+  const chainSystems = () => {
+    if (!ui.fp || !ui.fpChain) return null;
+    const g = S.graph;
+    const list = [...ui.fpChain.files];
+    return { sys: new Set(list.map((i) => g.system[i])), mod: new Set(list.map((i) => g.module[i])), sysPairs: new Set(list.slice(1).map((f, i) => key(g.system[list[i]], g.system[f]))), modPairs: new Set(list.slice(1).map((f, i) => key(g.module[list[i]], g.module[f]))) };
+  };
+
   // ---------- scene building ----------
   function buildSystemScene() {
     const sn = snap();
     const d = dv();
     const C = changeSets(d);
+    const CH = chainSystems();
     const present = new Map(systemsAt().map((x) => [x.id, x]));
     const everywhere = new Set();
     for (const s2 of S.snapshots) for (const x of s2.systems || []) if (x.files > 0) everywhere.add(x.id);
@@ -174,7 +318,9 @@
       const v = present.get(id);
       if (!everywhere.has(id)) continue;
       const files = v ? v.files : 0;
-      nodes.push({ id, kind: "system", box, name: sysName(id), files, sub: files ? `${plural(files, "file")} · ${plural(v.modules.length, "module")}` : "no files here yet", touched: C.touchedSys.get(id), ghost: files === 0 });
+      const fp = fpOf(ui.fp?.bySys, id);
+      const sub = fp ? (fp.startup ? `${fp.startup} of ${fp.total} load` : fp.onDemand ? `${fp.onDemand} on demand` : "not loaded") : files ? `${plural(files, "file")} · ${plural(v.modules.length, "module")}` : "no files here yet";
+      nodes.push({ id, kind: "system", box, name: sysName(id), files, sub, fp, chain: CH?.sys.has(id), touched: C.touchedSys.get(id), ghost: files === 0 });
     }
     const ids = new Set(nodes.map((n) => n.id));
     const edges = [];
@@ -183,7 +329,7 @@
       const k = key(e.from, e.to);
       const state = C.faultSys.has(k) ? "fault" : C.newSys.has(k) ? "new" : C.oldFaultSys.has(k) ? "fault-old" : C.grownSys.has(k) ? "grown" : "";
       if (e.typeOnly && !ui.showTypes && !state) continue;
-      edges.push({ id: "s|" + k, from: e.from, to: e.to, count: e.count, typeOnly: e.typeOnly, state, level: "system" });
+      edges.push({ id: "s|" + k, from: e.from, to: e.to, count: e.count, typeOnly: e.typeOnly, state, level: "system", load: ui.fp ? ui.fp.sysPairs.has(k) : undefined, chain: CH?.sysPairs.has(k) });
     }
     for (const [k, e] of C.goneSys) if (ids.has(e.from) && ids.has(e.to)) edges.push({ id: "s|" + k, from: e.from, to: e.to, count: e.count, typeOnly: e.typeOnly, state: "gone", level: "system" });
     // Intended dependencies: dashed until the code exists, then marked as planned.
@@ -200,6 +346,7 @@
     const sn = snap();
     const d = dv();
     const C = changeSets(d);
+    const CH = chainSystems();
     const sv = systemsAt().find((x) => x.id === sysId) || { modules: [], files: 0 };
     const mods = sv.modules.slice();
     if (d) for (const mid of d.delta.modules.removed) if (modSystem(mid) === sysId && !mods.some((m) => m.id === mid)) mods.push({ id: mid, label: modLabel(mid), files: 0, ghost: true });
@@ -241,28 +388,76 @@
     for (const id of neighbours) (weight(id, inAgg, "from") > weight(id, outAgg, "to") ? inSys : outSys).push(id);
     outSys.sort((a, b) => weight(b, outAgg, "to") - weight(a, outAgg, "to"));
     inSys.sort((a, b) => weight(b, inAgg, "from") - weight(a, inAgg, "from"));
-    // Grid of modules inside the container, neighbours in columns either side.
+    // Modules sit in the folder they came from (a system spread over core/app, core/session...
+    // shows each folder as its own group), neighbours in columns either side.
     const cw = 168, ch = 50, gap = 16;
-    const cols = Math.max(1, Math.min(6, Math.ceil(Math.sqrt(mods.length * 1.5))));
-    const rows = Math.ceil(mods.length / cols) || 1;
     const padTop = 40, pad = 22;
+    const groupOf = (m) => { const i = m.label.lastIndexOf("/"); return i > 0 ? m.label.slice(0, i) : ""; };
+    const groups = new Map();
+    for (const m of mods) (groups.get(groupOf(m)) || groups.set(groupOf(m), []).get(groupOf(m))).push(m);
+    const grouped = groups.size > 1;
+    const cells = []; // [module, x, y] relative to the container
+    const groupBoxes = [];
+    let innerW, innerH;
+    if (!grouped) {
+      const cols = Math.max(1, Math.min(6, Math.ceil(Math.sqrt(mods.length * 1.5))));
+      const rows = Math.ceil(mods.length / cols) || 1;
+      mods.forEach((m, i) => cells.push([m, pad + (i % cols) * (cw + gap), padTop + Math.floor(i / cols) * (ch + gap)]));
+      innerW = cols * cw + (cols - 1) * gap + pad * 2;
+      innerH = rows * ch + (rows - 1) * gap + padTop + pad;
+    } else {
+      const gp = 12, gt = 30;
+      // A footprint is about what loads: the rest of each folder folds into one quiet box.
+      if (ui.fp) for (const [name, ms] of groups) {
+        const quiet = ms.filter((m) => { const f = ui.fp.byMod.get(m.id); return !f || (!f.startup && !f.onDemand); });
+        if (quiet.length < 2) continue;
+        const keep = ms.filter((m) => !quiet.includes(m));
+        keep.push({ id: `more:${name}`, label: `${name}/${quiet.length} more`, files: quiet.reduce((a, m) => a + m.files, 0), folded: quiet.length, ghost: true });
+        groups.set(name, keep);
+      }
+      const list = [...groups].map(([name, ms]) => {
+        const cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(ms.length))));
+        const rows = Math.ceil(ms.length / cols);
+        return { name, ms, cols, w: cols * cw + (cols - 1) * gap + gp * 2, h: gt + rows * ch + (rows - 1) * gap + gp, files: ms.reduce((a, m) => a + m.files, 0) };
+      }).sort((a, b) => b.ms.length - a.ms.length || b.files - a.files || a.name.localeCompare(b.name));
+      // Shelf packing: fill rows up to a width that matches the room the neighbour columns leave.
+      const area = list.reduce((a, x) => a + (x.w + gap) * (x.h + gap), 0);
+      const W = els.map?.clientWidth || 1000, H = els.map?.clientHeight || 700;
+      const sideCols = (inSys.length ? 1 : 0) + (outSys.length ? 1 : 0);
+      const aspect = Math.max(1.1, Math.min(1.8, (W - sideCols * 290) / Math.max(200, H - 120)));
+      const maxW = Math.max(...list.map((x) => x.w), Math.sqrt(area * aspect));
+      let x = 0, y = 0, rowH = 0, widest = 0;
+      for (const grp of list) {
+        if (x > 0 && x + grp.w > maxW) { x = 0; y += rowH + gap; rowH = 0; }
+        groupBoxes.push({ x: pad + x, y: padTop + y, w: grp.w, h: grp.h, title: grp.name });
+        grp.ms.forEach((m, i) => cells.push([m, pad + x + gp + (i % grp.cols) * (cw + gap), padTop + y + gt + Math.floor(i / grp.cols) * (ch + gap)]));
+        x += grp.w + gap;
+        widest = Math.max(widest, x - gap);
+        rowH = Math.max(rowH, grp.h);
+      }
+      innerW = widest + pad * 2;
+      innerH = padTop + y + rowH + pad;
+    }
     const colW = 190;
-    const perCol = Math.max(5, rows + 1);
+    const perCol = Math.max(5, Math.floor(innerH / 56));
     const leftCols = Math.ceil(inSys.length / perCol);
     const cx = leftCols ? leftCols * (colW + 24) + 70 : 0;
-    const contW = cols * cw + (cols - 1) * gap + pad * 2;
-    const contH = rows * ch + (rows - 1) * gap + padTop + pad;
+    const contW = innerW, contH = innerH;
     const rightX = cx + contW + 70;
     const nodes = [];
-    mods.forEach((m, i) => {
-      const r = Math.floor(i / cols), c = i % cols;
+    for (const [m, x, y] of cells) {
+      if (m.folded) {
+        nodes.push({ id: m.id, kind: "folded", name: `${m.folded} more`, sub: "not loaded", ghost: true, box: { x: cx + x, y, w: cw, h: ch } });
+        continue;
+      }
+      const fp = fpOf(ui.fp?.byMod, m.id);
       nodes.push({
-        id: m.id, kind: "module", name: m.label, files: m.files, ghost: m.ghost || m.files === 0,
-        sub: m.files ? plural(m.files, "file") : "removed",
-        box: { x: cx + pad + c * (cw + gap), y: padTop + r * (ch + gap), w: cw, h: ch },
+        id: m.id, kind: "module", name: grouped ? m.label.slice(m.label.lastIndexOf("/") + 1) : m.label, files: m.files, ghost: m.ghost || m.files === 0, fp, chain: CH?.mod.has(m.id),
+        sub: fp ? (fp.startup ? `${fp.startup} of ${fp.total} load` : fp.onDemand ? `${fp.onDemand} on demand` : "not loaded") : m.files ? plural(m.files, "file") : "removed",
+        box: { x: cx + x, y, w: cw, h: ch },
         touched: C.touchedMod.get(m.id),
       });
-    });
+    }
     const column = (list, x0, dir) => {
       const hh = 44, g2 = 12;
       for (let c = 0; c * perCol < list.length; c++) {
@@ -270,21 +465,53 @@
         const total = chunk.length * hh + Math.max(0, chunk.length - 1) * g2;
         const y0 = (contH - total) / 2;
         const x = x0 + dir * c * (colW + 24);
-        chunk.forEach((id, i) => nodes.push({ id: "sys:" + id, sysId: id, kind: "neighbour", name: sysName(id), sub: "system", box: { x, y: y0 + i * (hh + g2), w: colW, h: hh }, touched: C.touchedSys.get(id) }));
+        chunk.forEach((id, i) => {
+          const fp = fpOf(ui.fp?.bySys, id);
+          nodes.push({ id: "sys:" + id, sysId: id, kind: "neighbour", name: sysName(id), sub: fp ? (fp.startup ? `${fp.startup} of ${fp.total} load` : "not loaded") : "system", fp, chain: CH?.sys.has(id), box: { x, y: y0 + i * (hh + g2), w: colW, h: hh }, touched: C.touchedSys.get(id) });
+        });
       }
     };
     column(inSys, cx - 70 - colW, -1);
     column(outSys, rightX, 1);
+    // An endpoint is a module, a folder group ("grp:<name>") or a neighbouring system ("sys:<id>").
+    const groupOfMod = new Map(mods.map((m) => [m.id, groupOf(m)]));
+    const endpointOf = (mid) => (grouped && modSystem(mid) === sysId ? "grp:" + groupOfMod.get(mid) : mid);
+    const matches = (end, mid) => (end.startsWith("sys:") ? modSystem(mid) === end.slice(4) : end.startsWith("grp:") ? modSystem(mid) === sysId && groupOfMod.get(mid) === end.slice(4) : end === mid);
+    const anyPair = (pairs, e) => {
+      if (!pairs) return false;
+      if (!e.from.includes(":") && !e.to.includes(":")) return pairs.has(key(e.from, e.to));
+      for (const k of pairs) {
+        const i = k.indexOf("\u0000");
+        if (matches(e.from, k.slice(0, i)) && matches(e.to, k.slice(i + 1))) return true;
+      }
+      return false;
+    };
+    const selMod = ui.sel?.type === "module" && modSystem(ui.sel.id) === sysId ? ui.sel.id : null;
     const edges = [];
-    for (const e of inner) {
-      if (e.typeOnly && !ui.showTypes && !e.state) continue;
-      edges.push({ id: "m|" + key(e.from, e.to), from: e.from, to: e.to, count: e.count, typeOnly: e.typeOnly, state: e.state, level: "module" });
+    const push = (e, level) => {
+      if (e.typeOnly && !ui.showTypes && !e.state) return;
+      edges.push({ ...e, id: (level === "module" ? "m|" : level === "group" ? "g|" : "x|") + key(e.from, e.to), level, load: ui.fp ? anyPair(ui.fp.modPairs, e) : undefined, chain: anyPair(CH?.modPairs, e) });
+    };
+    if (!grouped) {
+      for (const e of inner) push(e, "module");
+      for (const e of [...outAgg.values(), ...inAgg.values()]) push(e, "mixed");
+    } else {
+      // Folders talk to folders; a selected module shows its own imports on top.
+      const agg = new Map();
+      for (const e of [...inner, ...outAgg.values(), ...inAgg.values()]) {
+        const from = e.from.startsWith("sys:") ? e.from : endpointOf(e.from);
+        const to = e.to.startsWith("sys:") ? e.to : endpointOf(e.to);
+        if (from === to) continue;
+        const k = key(from, to);
+        const cur = agg.get(k);
+        if (cur) { cur.count += e.count; cur.typeOnly = cur.typeOnly && e.typeOnly; if (e.state && !cur.state) cur.state = e.state; }
+        else agg.set(k, { from, to, count: e.count, typeOnly: e.typeOnly, state: e.state });
+      }
+      for (const e of agg.values()) push(e, "group");
+      if (selMod) for (const e of [...inner, ...outAgg.values(), ...inAgg.values()]) if (e.from === selMod || e.to === selMod) push(e, e.from.startsWith("sys:") || e.to.startsWith("sys:") ? "mixed" : "module");
     }
-    for (const e of [...outAgg.values(), ...inAgg.values()]) {
-      if (e.typeOnly && !ui.showTypes && !e.state) continue;
-      edges.push({ id: "x|" + key(e.from, e.to), from: e.from, to: e.to, count: e.count, typeOnly: e.typeOnly, state: e.state, level: "mixed" });
-    }
-    return { nodes, edges, container: { x: cx, y: 0, w: contW, h: contH, title: sysName(sysId) } };
+    const pseudo = groupBoxes.map((b) => ({ id: "grp:" + b.title, box: { ...b, x: b.x + cx } }));
+    return { nodes, edges, pseudo, groups: groupBoxes.map((b) => ({ ...b, x: b.x + cx })), container: { x: cx, y: 0, w: contW, h: contH, title: sysName(sysId) } };
   }
 
   // ---------- geometry ----------
@@ -359,12 +586,7 @@
     els.svg.append(els.defs, els.vp);
     els.crumbs = h("nav", { class: "fl-crumbs", "aria-label": "Breadcrumb" });
     els.tools = h("div", { class: "fl-tools" });
-    els.legend = h("div", { class: "fl-legend" },
-      h("span", {}, h("i", { class: "k-new" }), "new dependency"),
-      h("span", {}, h("i", { class: "k-fault" }), "crosses a fault line"),
-      h("span", {}, h("i", { class: "k-gone" }), "removed"),
-      h("span", {}, h("i", { class: "k-plan" }), "planned"),
-      h("span", {}, h("i", { class: "k-touch" }), "changed"));
+    els.legend = h("div", { class: "fl-legend" });
     els.map.append(els.svg, els.crumbs, els.tools, els.legend);
     bindPanZoom();
     window.addEventListener("resize", () => { ui.fitted = ""; renderMap(); });
@@ -402,7 +624,7 @@
   let lastClick = { id: "", t: 0 };
   function renderMap() {
     scene = ui.view.kind === "system" ? buildDrillScene(ui.view.id) : buildSystemScene();
-    const routed = routeAll(scene.nodes, scene.edges);
+    const routed = routeAll(scene.nodes.concat(scene.pseudo || []), scene.edges);
     const selEdge = ui.sel?.type === "edge" ? ui.sel.id : null;
     const selNode = ui.sel?.type === "system" || ui.sel?.type === "module" ? ui.sel.id : null;
     const anyChange = routed.some((e) => e.state && e.state !== "fault-old") || scene.nodes.some((n) => n.touched);
@@ -410,10 +632,13 @@
     const layerHits = s("g");
     const layerNodes = s("g");
     const maxCount = Math.max(1, ...routed.map((e) => e.count));
+    const fpOn = !!ui.fp;
     for (const e of routed) {
-      const w = e.id === selEdge ? 3.6 : e.state === "new" || e.state === "fault" || e.state === "planned" ? 2.6 : 1 + Math.min(3.2, (Math.log2(e.count + 1) / Math.log2(maxCount + 1)) * 3.2);
-      const cls = ["edge", e.typeOnly ? "is-type" : "", e.state ? "is-" + e.state : "", e.id === selEdge ? "is-selected" : "", anyChange && !e.state ? "is-faded" : ""].filter(Boolean).join(" ");
-      const marker = (e.id === selEdge && !e.state) || e.state === "planned" ? "a-accent" : e.state === "new" ? "a-new" : e.state === "grown" ? "a-hot" : e.state === "fault" || e.state === "gone" || e.state === "fault-old" ? "a-fault" : "a-default";
+      const w = e.id === selEdge || e.chain ? 3.6 : e.state === "new" || e.state === "fault" || e.state === "planned" ? 2.6 : 1 + Math.min(3.2, (Math.log2(e.count + 1) / Math.log2(maxCount + 1)) * 3.2);
+      // In a footprint, what loads at startup is the story; changes keep their colours on top.
+      const faded = fpOn ? (ui.fpChain ? !e.chain && !e.state : !e.load && !e.state) : anyChange && !e.state;
+      const cls = ["edge", e.typeOnly ? "is-type" : "", e.state ? "is-" + e.state : "", fpOn && e.load && !e.state ? "is-load" : "", e.chain ? "is-chain" : "", e.id === selEdge ? "is-selected" : "", faded ? "is-faded" : ""].filter(Boolean).join(" ");
+      const marker = (e.id === selEdge && !e.state) || e.state === "planned" || ((e.load || e.chain) && !e.state) ? "a-accent" : e.state === "new" ? "a-new" : e.state === "grown" ? "a-hot" : e.state === "fault" || e.state === "gone" || e.state === "fault-old" ? "a-fault" : "a-default";
       const path = s("path", { d: e.d, class: cls, "stroke-width": w, "marker-end": `url(#${marker})`, "data-id": e.id, "data-from": e.from, "data-to": e.to });
       layerEdges.append(path);
       const hit = s("path", { d: e.d, class: "edge-hit", "data-id": e.id });
@@ -423,20 +648,22 @@
     }
     if (scene.container) {
       const c = scene.container;
-      layerEdges.prepend(s("rect", { x: c.x, y: c.y, width: c.w, height: c.h, rx: 14, class: "container-box" }), s("text", { x: c.x + 18, y: c.y + 24, class: "container-title", text: c.title }));
+      const groups = (scene.groups || []).flatMap((b) => [s("rect", { x: b.x, y: b.y, width: b.w, height: b.h, rx: 10, class: "group-box" }), s("text", { x: b.x + 12, y: b.y + 19, class: "group-title", text: b.title })]);
+      layerEdges.prepend(s("rect", { x: c.x, y: c.y, width: c.w, height: c.h, rx: 14, class: "container-box" }), s("text", { x: c.x + 18, y: c.y + 24, class: "container-title", text: c.title }), ...groups);
     }
     for (const n of scene.nodes) layerNodes.append(nodeEl(n, selNode));
     // Edge hit areas sit under the nodes: a box is always clickable even with edges passing over it.
     els.vp.replaceChildren(layerEdges, layerHits, layerNodes);
     renderCrumbs();
     renderTools();
-    const fitKey = (ui.view.kind === "system" ? "sys:" + ui.view.id : "map") + "|" + scene.nodes.length;
+    const fitKey = (ui.view.kind === "system" ? "sys:" + ui.view.id : "map") + "|" + scene.nodes.length + "|" + (ui.fp ? ui.fp.entry : "");
     if (ui.fitted !== fitKey) { fit(); ui.fitted = fitKey; }
     applyTransform();
   }
 
   function label(id) {
     if (id.startsWith("sys:")) return sysName(id.slice(4));
+    if (id.startsWith("grp:")) return id.slice(4) + "/";
     if (id.includes("/")) return modLabel(id);
     return sysName(id);
   }
@@ -444,13 +671,21 @@
   function nodeEl(n, selNode) {
     const b = n.box;
     const t = n.touched;
-    const cls = ["node", t ? "is-touched" : "", n.ghost ? "is-ghost" : "", n.kind === "neighbour" ? "is-neighbour" : "", selNode === n.id ? "is-selected" : ""].filter(Boolean).join(" ");
+    const unloaded = n.fp && !n.fp.startup && !n.fp.onDemand && !n.ghost;
+    const cls = ["node", t ? "is-touched" : "", n.ghost ? "is-ghost" : "", n.kind === "neighbour" ? "is-neighbour" : "", selNode === n.id ? "is-selected" : "", unloaded ? "is-unloaded" : "", n.chain ? "is-chain" : ""].filter(Boolean).join(" ");
     const g = s("g", { class: cls, transform: `translate(${b.x},${b.y})`, tabindex: "0", role: "button", "aria-label": `${n.name}${n.sub ? ", " + n.sub : ""}`, "data-id": n.id });
     g.append(s("rect", { class: "n-box", width: b.w, height: b.h, rx: n.kind === "module" ? 8 : 10 }));
     const nameMax = Math.floor((b.w - 26) / 7.6);
     const name = n.name.length > nameMax ? n.name.slice(0, nameMax - 1) + "…" : n.name;
     g.append(s("text", { class: "n-name", x: 14, y: b.h / 2 - (n.sub ? 3 : -5), text: name }));
-    if (n.sub) g.append(s("text", { class: "n-sub", x: 14, y: b.h / 2 + 14, text: n.sub }));
+    if (n.sub) g.append(s("text", { class: "n-sub" + (n.fp?.startup ? " is-load" : ""), x: 14, y: b.h / 2 + 14, text: n.sub }));
+    if (n.fp && n.fp.total && (n.fp.startup || n.fp.onDemand)) {
+      // How much of it loads: a bar along the bottom edge, solid for startup, faint for on demand.
+      const bw = b.w - 2, one = bw / n.fp.total;
+      g.append(s("rect", { class: "n-bar-bg", x: 1, y: b.h - 4, width: bw, height: 3 }));
+      if (n.fp.onDemand) g.append(s("rect", { class: "n-bar-lazy", x: 1 + n.fp.startup * one, y: b.h - 4, width: n.fp.onDemand * one, height: 3 }));
+      if (n.fp.startup) g.append(s("rect", { class: "n-bar", x: 1, y: b.h - 4, width: n.fp.startup * one, height: 3 }));
+    }
     if (n.name.length > nameMax) g.append(s("title", { text: n.name }));
     if (t && n.kind !== "neighbour") {
       const parts = [["+", t.added.length, "n-chip-add"], ["~", t.modified.length, "n-chip-mod"], ["−", t.removed.length, "n-chip-del"]].filter((x) => x[1] > 0);
@@ -470,6 +705,7 @@
     g.addEventListener("click", (ev) => {
       if (moved) return;
       ev.stopPropagation();
+      if (n.kind === "folded") return;
       // A click re-renders the map, so a native dblclick never reaches the same element: time it instead.
       const now = Date.now();
       if (lastClick.id === n.id && now - lastClick.t < 400) {
@@ -504,7 +740,12 @@
   }
 
   function renderTools() {
+    const fpOn = !!ui.fp;
+    els.legend.replaceChildren(...(fpOn
+      ? [h("span", {}, h("i", { class: "k-load" }), "loads at startup"), h("span", {}, h("i", { class: "k-bar" }), "share of files that load"), h("span", {}, h("i", { class: "k-unloaded" }), "not loaded")]
+      : [h("span", {}, h("i", { class: "k-new" }), "new dependency"), h("span", {}, h("i", { class: "k-fault" }), "crosses a fault line"), h("span", {}, h("i", { class: "k-gone" }), "removed"), h("span", {}, h("i", { class: "k-plan" }), "planned"), h("span", {}, h("i", { class: "k-touch" }), "changed")]));
     els.tools.replaceChildren(
+      S.graph ? h("button", { class: "fl-btn", id: "fl-footprint", "aria-pressed": String(fpOn || ui.sel?.type === "fp-pick"), title: "What an entry point loads at startup", onclick: () => (fpOn ? setFootprint(null) : select({ type: "fp-pick" })) }, fpOn ? "Exit footprint" : "Footprint") : null,
       h("button", { class: "fl-btn", "aria-pressed": String(ui.showTypes), title: "Show imports that only bring in types", onclick: () => { ui.showTypes = !ui.showTypes; renderMap(); } }, "Type imports"),
       h("button", { class: "fl-btn", title: "Fit to screen (F)", onclick: () => { fit(); applyTransform(); } }, "Fit"),
     );
@@ -513,9 +754,15 @@
   // ---------- panel ----------
   function renderPanel() {
     const body = h("div", { class: "fl-panel-body" });
-    if (ui.sel?.type === "edge") panelEdge(body);
-    else if (ui.sel?.type === "system") panelSystem(body, ui.sel.id);
-    else if (ui.sel?.type === "module") panelModule(body, ui.sel.id);
+    const t = ui.sel?.type;
+    if (t === "edge") panelEdge(body);
+    else if (t === "system") panelSystem(body, ui.sel.id);
+    else if (t === "module") panelModule(body, ui.sel.id);
+    else if (t === "fp-pick") panelPick(body);
+    else if (t === "fp-file" && ui.fp) panelWhy(body, ui.sel.file);
+    else if (t === "fp-pkg" && ui.fp) panelPackage(body, ui.sel.pkg);
+    else if (t === "fp-cut" && ui.fp) panelCut(body, ui.sel.cut);
+    else if (ui.fp) panelFootprint(body);
     else panelSummary(body);
     els.panel.replaceChildren(body, timeline());
   }
@@ -575,6 +822,141 @@
     }
   }
 
+  // ---------- footprint panels ----------
+  const G = () => S.graph;
+  const pathOf = (i) => G().paths[i];
+  /** Paths shown relative to the folder the entry's package lives in, so lists stay readable. */
+  function shortPath(p) {
+    const e = ui.fp?.entry || "";
+    const m = /^(.*?\/)(src|lib|source)\//.exec(e);
+    const prefix = m ? m[1] : "";
+    return prefix && p.startsWith(prefix) ? p.slice(prefix.length) : p;
+  }
+  function fileButton(i, extra) {
+    return h("button", { class: "fl-fbtn", onclick: () => explain(i), title: pathOf(i) }, h("span", { class: "p", text: shortPath(pathOf(i)) }), extra ? h("span", { class: "x", text: extra }) : null);
+  }
+  function entryTitle(fp) {
+    return h("div", {},
+      h("div", { class: "fl-eyebrow", text: "Footprint of" }),
+      h("h1", { class: "fl-headline fl-mono-h", text: fp.label || baseName(fp.entry) }),
+      h("p", { class: "fl-sub" }, h("code", { text: fp.entry })));
+  }
+  function fpBack() {
+    return h("button", { class: "fl-back", onclick: () => { ui.fpChain = null; select(null); }, text: "← Footprint" });
+  }
+
+  function panelPick(body) {
+    body.append(h("button", { class: "fl-back", onclick: () => select(null), text: ui.fp ? "← Footprint" : "← What changed" }));
+    body.append(h("div", {}, h("h1", { class: "fl-headline", text: "What does it load?" }),
+      h("p", { class: "fl-sub", text: "Pick an entry point: a package export, a bin, a main file. The map shows everything it loads at startup and where the cheapest cuts are." })));
+    const input = h("input", { class: "fl-input", id: "fl-entry-q", placeholder: "Search entries or any file path", "aria-label": "Entry or file", autocomplete: "off" });
+    const list = h("ul", { class: "fl-picks" });
+    const entries = S.entries || [];
+    const fill = () => {
+      const q = input.value.trim().toLowerCase();
+      const hits = entries.filter((e) => !q || e.label.toLowerCase().includes(q) || e.path.toLowerCase().includes(q)).slice(0, 40).map((e) => ({ label: e.label, path: e.path }));
+      if (q.length >= 2 && hits.length < 40) {
+        const taken = new Set(hits.map((x) => x.path));
+        for (const p of G().paths) if (p.toLowerCase().includes(q) && !taken.has(p)) { hits.push({ label: "", path: p }); if (hits.length >= 40) break; }
+      }
+      list.replaceChildren(...hits.map((x) => h("li", {}, h("button", { class: "fl-pick", onclick: () => setFootprint(x.path) }, x.label ? h("span", { class: "l", text: x.label }) : null, h("span", { class: "p", text: x.path })))));
+      if (!hits.length) list.append(h("li", { class: "fl-sub", text: entries.length ? "Nothing matches." : "No entry points found in the manifests. Search for a file instead." }));
+    };
+    input.addEventListener("input", fill);
+    input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") list.querySelector(".fl-pick")?.click(); });
+    fill();
+    body.append(input, list);
+    requestAnimationFrame(() => input.focus());
+  }
+
+  function panelFootprint(body) {
+    const fp = ui.fp;
+    const systems = [...fp.bySys].filter(([, v]) => v.startup || v.onDemand).sort((a, b) => b[1].startup - a[1].startup || b[1].onDemand - a[1].onDemand);
+    const loadedSystems = systems.filter(([, v]) => v.startup).length;
+    body.append(entryTitle(fp));
+    body.append(h("div", {},
+      h("div", { class: "fl-bignum" }, h("b", { text: String(fp.startup.size) }), " files load at startup"),
+      h("p", { class: "fl-sub", text: `across ${loadedSystems} of ${S.config.systems.length} systems${fp.later.size ? `, ${fp.later.size} more on demand through import()` : ""}. Type-only imports are not counted.` })));
+    body.append(h("div", { class: "fl-steer" },
+      h("button", { class: "fl-btn", onclick: () => select({ type: "fp-pick" }) }, "Change entry"),
+      h("button", { class: "fl-btn", onclick: () => setFootprint(null) }, "Exit")));
+    if (fp.pkgs.size) {
+      body.append(section("npm packages at startup", h("div", { class: "fl-deps" }, [...fp.pkgs].sort((a, b) => a[0].localeCompare(b[0])).map(([pkg, users]) =>
+        h("button", { class: "fl-dep", onclick: () => explainPkg(pkg) }, pkg, h("span", { class: "n", text: String(users.length) }))))));
+    }
+    if (fp.cuts.length) {
+      body.append(section("Cut points", h("div", { style: "display:flex;flex-direction:column;gap:6px" },
+        h("p", { class: "fl-sub", style: "margin:0 0 2px", text: "Stop importing the file and this many files stop loading at startup." }),
+        h("ul", { class: "fl-findings" }, fp.cuts.map((c, i) => [c, i]).filter(([c, i]) => i < 6 || c.packages.length).map(([c, i]) => h("li", {}, h("button", { class: "fl-finding fl-cut", "data-edge": "1", onclick: () => { ui.fpChain = { files: new Set(chainOf(fp, c.file)) }; select({ type: "fp-cut", cut: i }); } },
+          h("span", { class: "fl-cutn", text: String(c.drops.length) }),
+          h("span", {}, h("div", { class: "t", text: shortPath(pathOf(c.file)) }), h("div", { class: "d" }, c.packages.length ? h("span", { class: "fl-drop", text: `takes ${c.packages.join(", ")} with it` }) : null, c.packages.length ? " · " : "", `imported by ${c.importers.length === 1 ? baseName(pathOf(c.importers[0])) : plural(c.importers.length, "file")}`)))))))));
+    }
+    body.append(section("By system", h("div", { class: "fl-touched" }, systems.map(([id, v]) => h("button", { class: "fl-trow", onclick: () => drill(id) },
+      h("span", { class: "nm", text: sysName(id) }),
+      h("span", { class: "fl-counts" }, h("span", { class: "fl-meter" }, h("i", { style: `width:${Math.round((v.startup / v.total) * 100)}%` })), h("span", { text: v.startup ? `${v.startup} of ${v.total}` : `${v.onDemand} lazy` })))))));
+  }
+
+  function chainList(fp, chain) {
+    const ul = h("ol", { class: "fl-chain" });
+    chain.forEach((f, i) => {
+      const nm = i ? (fp.names.get(chain[i - 1] * fp.n + f) || "").split(",").filter((x) => x && x !== "*") : [];
+      ul.append(h("li", {},
+        h("div", { class: "path", text: shortPath(pathOf(f)) }),
+        h("div", { class: "meta" }, h("span", { class: "sys", text: sysName(G().system[f]) }), nm.length ? [" · imports ", ...nm.slice(0, 4).map((x, j) => [j ? ", " : "", h("b", { text: x })]), nm.length > 4 ? ` +${nm.length - 4}` : ""] : i ? "" : " · entry")));
+    });
+    return ul;
+  }
+
+  function panelWhy(body, f) {
+    const fp = ui.fp;
+    body.append(fpBack());
+    const chain = chainOf(fp, f);
+    body.append(h("div", {}, h("div", { class: "fl-eyebrow", text: "Why it loads" }), h("h1", { class: "fl-headline fl-mono-h", text: baseName(pathOf(f)) }), h("p", { class: "fl-sub" }, h("code", { text: pathOf(f) }))));
+    if (!chain.length) {
+      body.append(h("div", { class: "fl-empty", text: fp.later.has(f) ? "It is not loaded at startup, only on demand through an import()." : "It does not load from this entry." }));
+      return;
+    }
+    body.append(section(`Shortest chain · ${plural(chain.length - 1, "import")}`, chainList(fp, chain)));
+    // Its dominators: files every startup path to it goes through, nearest first.
+    const doms = [];
+    for (let d = fp.idom[f]; d !== undefined && d !== fp.ei; d = fp.idom[d]) doms.push(d);
+    const imp = fp.importers.get(f) || [];
+    body.append(section("To stop loading it", h("div", { style: "display:flex;flex-direction:column;gap:6px" },
+      h("p", { class: "fl-sub", style: "margin:0", text: imp.length === 1 ? `Only one startup file imports it. Change that import, or make it lazy:` : `${imp.length} startup files import it. All of them would have to change:` }),
+      h("div", { class: "fl-files-b" }, imp.slice(0, 12).map((i) => fileButton(i, (fp.names.get(i * fp.n + f) || "").split(",").filter((x) => x && x !== "*").slice(0, 3).join(", ")))),
+      doms.length ? h("p", { class: "fl-sub", style: "margin:6px 0 0", text: `Every startup path to it also goes through ${plural(doms.length, "file")}; cutting any of them drops it too:` }) : null,
+      doms.length ? h("div", { class: "fl-files-b" }, doms.slice(0, 6).map((i) => fileButton(i))) : null)));
+  }
+
+  function panelPackage(body, pkg) {
+    const fp = ui.fp;
+    const users = fp.pkgs.get(pkg) || [];
+    body.append(fpBack());
+    body.append(h("div", {}, h("div", { class: "fl-eyebrow", text: "Why this package loads" }), h("h1", { class: "fl-headline fl-mono-h", text: pkg }),
+      h("p", { class: "fl-sub", text: `${plural(users.length, "startup file")} import${users.length === 1 ? "s" : ""} it at runtime.` })));
+    for (const u of users.slice(0, 6)) body.append(section(`Through ${pathOf(u).split("/").slice(-2).join("/")}`, chainList(fp, chainOf(fp, u))));
+  }
+
+  function panelCut(body, i) {
+    const fp = ui.fp;
+    const c = fp.cuts[i];
+    if (!c) return panelFootprint(body);
+    body.append(fpBack());
+    body.append(h("div", {}, h("div", { class: "fl-eyebrow", text: "Cut point" }), h("h1", { class: "fl-headline fl-mono-h", text: shortPath(pathOf(c.file)) }),
+      h("p", { class: "fl-sub", text: `${plural(c.drops.length, "file")} stop loading at startup if nothing on the startup path imports it${c.packages.length ? `, and ${c.packages.join(", ")} with them` : ""}.` })));
+    body.append(section("Imported by", h("div", { class: "fl-files-b" }, c.importers.map((x) => fileButton(x, (fp.names.get(x * fp.n + c.file) || "").split(",").filter((y) => y && y !== "*").slice(0, 3).join(", "))))));
+    body.append(section("Why it loads", chainList(fp, chainOf(fp, c.file))));
+    body.append(section("What stops loading", h("div", { class: "fl-files-b" }, c.drops.slice(0, 30).map((x) => fileButton(x)))));
+  }
+
+  function footprintSection(filter) {
+    const fp = ui.fp;
+    const g = G();
+    const loaded = [...fp.startup].filter((i) => filter(i)).sort((a, b) => g.paths[a].localeCompare(g.paths[b]));
+    const lazy = [...fp.later].filter((i) => filter(i));
+    return section(`At startup · ${loaded.length} loaded${lazy.length ? `, ${lazy.length} on demand` : ""}`, loaded.length ? h("div", { class: "fl-files-b" }, loaded.slice(0, 40).map((i) => fileButton(i, "why?"))) : h("div", { class: "fl-sub", text: "Nothing here loads at startup." }));
+  }
+
   function counts(t) {
     return h("span", { class: "fl-counts" },
       t.added.length ? h("span", { class: "c-add", text: "+" + t.added.length }) : null,
@@ -587,7 +969,7 @@
   }
 
   function backButton() {
-    return h("button", { class: "fl-back", onclick: () => select(null), text: "← What changed" });
+    return h("button", { class: "fl-back", onclick: () => { ui.fpChain = null; select(null); }, text: ui.fp ? "← Footprint" : "← What changed" });
   }
 
   function panelSystem(body, id) {
@@ -613,8 +995,9 @@
     const ins = edges.filter((e) => e.to === id && (ui.showTypes || !e.typeOnly));
     body.append(section("Depends on", outs.length ? h("div", { class: "fl-deps" }, outs.map((e) => chip(e.to, e.count, "out"))) : h("div", { class: "fl-sub", text: "Nothing outside itself." })));
     body.append(section("Used by", ins.length ? h("div", { class: "fl-deps" }, ins.map((e) => chip(e.from, e.count, "in"))) : h("div", { class: "fl-sub", text: "No other system imports it." })));
+    if (ui.fp) body.append(footprintSection((i) => S.graph.system[i] === id));
     if (t) body.append(section("Changed files", fileList(t)));
-    if (S.mode === "live") {
+    if (S.mode === "live" && !ui.fp) {
       const others = S.config.systems.filter((x) => x.id !== id && !edges.some((e) => e.from === id && e.to === x.id));
       const pick = h("select", { class: "fl-input", id: "fl-plan-target", "aria-label": "System to depend on" }, others.map((x) => h("option", { value: x.id, text: x.name })));
       const why = h("input", { class: "fl-input", id: "fl-plan-why", placeholder: "Why (optional)", "aria-label": "Why this dependency" });
@@ -643,6 +1026,7 @@
     };
     body.append(section("Depends on", outs.length ? h("div", { class: "fl-deps" }, outs.map((e) => chip(e, e.to))) : h("div", { class: "fl-sub", text: "Nothing outside itself." })));
     body.append(section("Used by", ins.length ? h("div", { class: "fl-deps" }, ins.map((e) => chip(e, e.from))) : h("div", { class: "fl-sub", text: "Nothing imports it." })));
+    if (ui.fp) body.append(footprintSection((i) => S.graph.module[i] === id));
     if (t) body.append(section("Changed files", fileList(t)));
   }
 
@@ -659,9 +1043,9 @@
     const sel = ui.sel;
     const d = dv();
     const C = changeSets(d);
-    const endpoint = (id) => (id.startsWith("sys:") ? { kind: "system", id: id.slice(4) } : sel.level === "system" ? { kind: "system", id } : { kind: "module", id });
+    const endpoint = (id) => (id.startsWith("sys:") ? { kind: "system", id: id.slice(4) } : id.startsWith("grp:") ? { kind: "group", id: `${ui.view.id}/${id.slice(4)}/` } : sel.level === "system" ? { kind: "system", id } : { kind: "module", id });
     const A = endpoint(sel.from), B = endpoint(sel.to);
-    const nameOf = (x) => (x.kind === "system" ? sysName(x.id) : `${modLabel(x.id)}`);
+    const nameOf = (x) => (x.kind === "system" ? sysName(x.id) : x.kind === "group" ? `${x.id.slice(x.id.indexOf("/") + 1)}` : `${modLabel(x.id)}`);
     const sysPair = key(A.kind === "system" ? A.id : modSystem(A.id), B.kind === "system" ? B.id : modSystem(B.id));
     const violation = d?.delta.violations.introduced.find((v) => key(v.from, v.to) === sysPair) || d?.delta.violations.existing.find((v) => key(v.from, v.to) === sysPair);
     const isNew = sel.level === "system" ? C.newSys.has(key(sel.from, sel.to)) : C.newMod.has(key(sel.from, sel.to));
@@ -671,7 +1055,7 @@
       h("h1", { class: "fl-headline" + (violation ? " is-fault" : "") }, `${nameOf(A)} → ${nameOf(B)}`),
       h("p", { class: "fl-sub", text: violation ? `Crosses a fault line: deny ${violation.rule}${violation.reason ? `. ${violation.reason}` : ""}` : gone ? "This dependency was removed by the change." : isNew ? "New in this change." : "Existing dependency." }),
     ));
-    const match = (x, fileSys, fileMod) => (x.kind === "system" ? fileSys === x.id : fileMod === x.id);
+    const match = (x, fileSys, fileMod) => (x.kind === "system" ? fileSys === x.id : x.kind === "group" ? !!fileMod && fileMod.startsWith(x.id) : fileMod === x.id);
     const { list, complete } = evidence((e) => match(A, e.fs, e.fm) && match(B, e.ts, e.tm));
     const planned = ((S.plan && S.plan.edges) || []).find((p) => p.from === sel.from && p.to === sel.to);
     if (planned && !list.length && !gone) {
@@ -795,6 +1179,7 @@
   // ---------- actions ----------
   function select(sel) {
     ui.sel = sel;
+    if (!sel) ui.fpChain = null;
     renderMap();
     renderPanel();
   }
@@ -865,6 +1250,11 @@
       const focus = scene.nodes.filter((n) => hot.has(n.id)).map((n) => n.box);
       if (focus.length) boxes = focus;
     }
+    // A footprint frames what loads; the rest stays visible around it, dimmed.
+    if (ui.fp && ui.view.kind === "systems") {
+      const loaded = scene.nodes.filter((n) => n.fp && (n.fp.startup || n.fp.onDemand)).map((n) => n.box);
+      if (loaded.length) boxes = loaded;
+    }
     if (!boxes.length) return;
     const x0 = Math.min(...boxes.map((b) => b.x)), y0 = Math.min(...boxes.map((b) => b.y));
     const x1 = Math.max(...boxes.map((b) => b.x + b.w)), y1 = Math.max(...boxes.map((b) => b.y + b.h));
@@ -932,12 +1322,23 @@
 
   // ---------- live mode ----------
   let liveStatus = "ok";
+  let booted = false;
+  /** ?entry=<label or path> opens the map on that entry's footprint. */
+  function openEntryFromUrl() {
+    const want = new URLSearchParams(location.search).get("entry");
+    if (!want || !S.graph) return;
+    const e = (S.entries || []).find((x) => x.label === want || x.path === want);
+    ui.fp = computeFootprint(e ? e.path : want);
+  }
   async function loadLive() {
     const res = await fetch("/api/state", { cache: "no-store" });
     const next = await res.json();
     const wasLast = !S || ui.followLive;
     S = next;
     if (wasLast || ui.snap >= S.snapshots.length) ui.snap = S.snapshots.length - 1;
+    if (ui.fp) ui.fp = computeFootprint(ui.fp.entry);
+    else if (!booted) openEntryFromUrl();
+    booted = true;
     render();
   }
   function connect() {
@@ -973,6 +1374,7 @@
     const hash = (location.hash || "").slice(1);
     const byHash = S.snapshots.findIndex((x) => x.ref.startsWith(hash) && hash.length >= 6);
     if (byHash >= 0) { ui.snap = byHash; ui.compare = "prev"; }
+    openEntryFromUrl();
     if (S.snapshots.length > 2) {
       ui.compare = "prev";
       // Land on the most recent step that changed the architecture: that is the story.

@@ -150,16 +150,22 @@ export function addRuleToFile(root: string, deny: string, reason?: string): bool
 
 /** Assigns files to systems and modules. Compiled once per config. */
 export class Assigner {
-  private matchers: { system: SystemDef; base: string; match: (p: string) => boolean }[] = [];
+  private matchers: { system: SystemDef; base: string; group: string; match: (p: string) => boolean }[] = [];
   private ignoreMatch: (p: string) => boolean;
   private cache = new Map<string, { system: string; module: string }>();
 
   constructor(readonly config: Config) {
     for (const system of config.systems) {
-      for (const glob of system.paths) {
-        const base = picomatch.scan(glob).base;
-        this.matchers.push({ system, base: base ? base.replace(/\/$/, "") + "/" : "", match: picomatch(glob, { dot: true }) });
-      }
+      // A literal file path matches from its folder, not from the file itself.
+      const bases = system.paths.map((glob) => {
+        const scan = picomatch.scan(glob);
+        const base = scan.isGlob ? scan.base : path.posix.dirname(glob) === "." ? "" : path.posix.dirname(glob);
+        return base ? base.replace(/\/$/, "") + "/" : "";
+      });
+      // A system spread over several folders names its modules after the folder they came from,
+      // so core/cache/handler.ts and core/session/handler.ts stay two modules, not one.
+      const groups = groupNames(bases);
+      system.paths.forEach((glob, i) => this.matchers.push({ system, base: bases[i], group: groups[i], match: picomatch(glob, { dot: true }) }));
     }
     this.matchers.sort((a, b) => b.base.length - a.base.length);
     this.ignoreMatch = picomatch(config.ignore, { dot: true });
@@ -176,13 +182,28 @@ export class Assigner {
     for (const m of this.matchers) {
       if (m.match(p)) {
         const rest = p.startsWith(m.base) ? p.slice(m.base.length) : p;
-        result = { system: m.system.id, module: `${m.system.id}/${topSegment(rest)}` };
+        result = { system: m.system.id, module: `${m.system.id}/${m.group ? m.group + "/" : ""}${topSegment(rest)}` };
         break;
       }
     }
     this.cache.set(p, result);
     return result;
   }
+}
+
+/** The part of each base folder that tells it apart from the system's other folders ("" when there is only one). */
+function groupNames(bases: string[]): string[] {
+  const distinct = [...new Set(bases.filter(Boolean))];
+  if (distinct.length < 2) return bases.map(() => "");
+  const parts = distinct.map((b) => b.replace(/\/$/, "").split("/"));
+  let common = 0;
+  while (parts.every((p) => common < p.length && p[common] === parts[0][common])) common++;
+  // A folder that is itself the shared prefix (core/ next to core/cache/) keeps its own name.
+  return bases.map((b) => {
+    if (!b) return "";
+    const segs = b.replace(/\/$/, "").split("/");
+    return segs.slice(common).join("/") || segs[segs.length - 1];
+  });
 }
 
 function topSegment(rest: string): string {

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Assigner, parseConfig } from "../src/config.js";
 import { Workspace } from "../src/context.js";
 import { findings, headline } from "../src/describe.js";
+import { detectEntries, dominators, footprint } from "../src/footprint.js";
 import { aggregate, cycles } from "../src/graph.js";
 import { parseFile } from "../src/parse.js";
 import { proposeHeuristic, simplifyGlobs } from "../src/propose.js";
@@ -131,6 +132,18 @@ describe("config", () => {
     expect(a.assign("packages/app/src/render/y.ts")).toEqual({ system: "pkg", module: "pkg/src" });
     expect(a.assign("other/z.ts").system).toBe("unmapped");
   });
+  it("names modules after their folder when a system spans several folders", () => {
+    const a = new Assigner(parseConfig(`version: 1
+systems:
+  - { id: app, name: App, paths: ["core/cache/**", "core/session/**", "core/request.ts"] }
+  - { id: one, name: One, paths: ["lib/**"] }
+`));
+    expect(a.assign("core/cache/handler.ts").module).toBe("app/cache/handler");
+    expect(a.assign("core/session/handler.ts").module).toBe("app/session/handler");
+    expect(a.assign("core/request.ts").module).toBe("app/core/request");
+    expect(a.assign("lib/util/x.ts").module).toBe("one/util");
+  });
+
   it("rejects duplicate system ids", () => {
     expect(() => parseConfig(`systems:\n  - { id: a, paths: [a/**] }\n  - { id: a, paths: [b/**] }\n`)).toThrow(/duplicate/);
   });
@@ -210,6 +223,51 @@ describe("model and diff", () => {
     const e = (from: string, to: string) => ({ from, to, count: 1, typeOnly: false });
     expect(cycles([e("a", "b"), e("b", "c"), e("c", "a"), e("c", "d")])).toEqual([["a", "b", "c"]]);
     expect(cycles([{ ...e("a", "b"), typeOnly: true }, e("b", "a")])).toEqual([]);
+  });
+});
+
+describe("footprint", () => {
+  const model = (edges: [string, string, ("type" | "dynamic")?][], externals: { file: string; pkg: string; typeOnly?: boolean }[] = []) => {
+    const paths = new Set(edges.flatMap(([a, b]) => [a, b]));
+    return {
+      ref: "x",
+      label: "x",
+      files: Object.fromEntries([...paths].map((p) => [p, { path: p, hash: p, system: p.split("/")[0], module: p }])),
+      edges: edges.map(([from, to, k]) => ({ from, to, names: ["x"], typeOnly: k === "type", kind: k === "dynamic" ? ("dynamic" as const) : ("static" as const), confidence: "exact" as const })),
+      externals,
+    };
+  };
+
+  it("counts startup and on-demand files, skips type imports, and finds the cut that drops a package", () => {
+    const m = model(
+      [["a/entry.ts", "a/app.ts"], ["a/app.ts", "b/router.ts"], ["a/app.ts", "c/session.ts"], ["c/session.ts", "c/store.ts"], ["c/store.ts", "c/driver.ts"], ["b/router.ts", "b/types.ts", "type"], ["b/router.ts", "d/page.ts", "dynamic"], ["d/page.ts", "d/render.ts"]],
+      [{ file: "c/store.ts", pkg: "unstorage" }, { file: "b/router.ts", pkg: "vite", typeOnly: true }],
+    );
+    const fp = footprint(m, "a/entry.ts");
+    expect(fp.startup).toEqual(["a/app.ts", "a/entry.ts", "b/router.ts", "c/driver.ts", "c/session.ts", "c/store.ts"]);
+    expect(fp.onDemand).toEqual(["d/page.ts", "d/render.ts"]);
+    expect(fp.packages).toEqual(["unstorage"]);
+    const cut = fp.cuts.find((c) => c.file === "c/session.ts");
+    expect(cut).toMatchObject({ drops: 3, packages: ["unstorage"], importers: [{ file: "a/app.ts" }] });
+  });
+
+  it("computes immediate dominators through a diamond", () => {
+    const succ: Record<string, string[]> = { e: ["a", "b"], a: ["c"], b: ["c"], c: ["d"], d: [] };
+    const idom = dominators("e", (n) => succ[n]);
+    expect(Object.fromEntries(idom)).toEqual({ e: "e", a: "e", b: "e", c: "e", d: "c" });
+  });
+
+  it("maps package exports from dist back to their source files", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "fl-entries-"));
+    write(root, { "packages/web/package.json": JSON.stringify({ name: "web", exports: { ".": { types: "./dist/index.d.ts", import: "./dist/index.js" }, "./app": "./dist/core/app.js", "./*": "./dist/*" }, bin: { webctl: "./dist/cli.js" } }) });
+    const entries = detectEntries(root, ["packages/web/src/index.ts", "packages/web/src/core/app.ts", "packages/web/src/cli.ts", "cmd/tool/main.go"]);
+    expect(entries).toEqual(expect.arrayContaining([
+      { label: "web", path: "packages/web/src/index.ts" },
+      { label: "web/app", path: "packages/web/src/core/app.ts" },
+      { label: "webctl (bin)", path: "packages/web/src/cli.ts" },
+      { label: "cmd/tool (main)", path: "cmd/tool/main.go" },
+    ]));
+    fs.rmSync(root, { recursive: true, force: true });
   });
 });
 

@@ -68,6 +68,10 @@ export interface FileEdge {
 export interface ExternalUse {
   file: string;
   pkg: string;
+  /** Every import of this package from this file is `import type`: nothing loads at runtime. */
+  typeOnly?: boolean;
+  /** Every import of it is a dynamic import(): it loads on demand, not at startup. */
+  dynamic?: boolean;
 }
 
 export interface Model {

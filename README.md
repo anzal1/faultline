@@ -1,8 +1,8 @@
 # faultline
 
-[![faultline replaying the last 260 commits of withastro/astro: the map lights up the one PR that added a dependency, shows the exact import behind it, then catches a simulated agent edit crossing a fault line](docs/demo.gif)](docs/demo.mp4)
+[![faultline running live on withastro/astro: an edit that makes request handling import the dev server turns its edge red, a new allowed dependency shows up green, then the drill-down into Request handling](docs/demo.gif)](docs/demo.mp4)
 
-<sub>The last 260 commits of withastro/astro on a map that never moves. Two changed how its systems depend on each other; one is shown with the exact import behind it. The final step is a simulated agent edit crossing a fault line. The systems and rules are an example map, not the Astro team's (<a href="examples/astro/faultline.yml">examples/astro</a>). <a href="docs/demo.mp4">Video with narration</a>.</sub>
+<sub>Recorded live on withastro/astro while real files changed. One edit crosses a fault line (production request handling importing the dev server), one adds an allowed dependency, and both are undone at the end. The systems and rules are an example map, not the Astro team's (<a href="examples/astro/faultline.yml">examples/astro</a>). Also: <a href="docs/footprint.mp4">what Astro's production entry loads at startup</a>.</sub>
 
 A living architecture map for any codebase. You declare the systems once. Every change after that, yours or any coding agent's, shows up as light on a map that never moves, as a sentence in the PR, and as a short answer the agent can read before it writes the wrong import.
 
@@ -11,6 +11,7 @@ fault init        # propose systems from the repo, write faultline.yml
 fault map         # open the live map; it redraws as files change
 fault setup       # connect your agents: MCP, hooks, AGENTS.md, pre-commit
 fault diff main   # what this branch did to the structure, in plain English
+fault footprint   # what an entry point loads at startup, and where to cut it
 fault check main  # exit 1 if it crosses a fault line (CI)
 ```
 
@@ -129,7 +130,8 @@ A pilot on the Astro monorepo: 36 headless Claude Code runs on tasks built to te
 `fault map` serves a local page that watches the repo and redraws as files change:
 
 - **Systems view.** Every system with its dependencies. New edges are green, crossed fault lines red, removed edges red and dashed, planned edges dotted blue, and changed systems get an amber outline with file counts.
-- **Drill in.** Double-click a system to see its modules, callers on the left and dependencies on the right.
+- **Drill in.** Double-click a system to see its modules, grouped by the folder they come from, with callers on the left and dependencies on the right. Edges run between folders; select a module to see its own imports.
+- **Footprint.** Pick an entry point (a package export, a bin, a `main.go` or `main.rs`) and the map shows what it loads at startup: how much of each system, which npm packages, and the shortest import chain behind any file or package. Cut points are the files whose removal from the startup path drops the most with them. Open one directly with `?entry=<export or path>`.
 - **Evidence.** Click an edge to see every import behind it, with the new ones highlighted.
 - **Steer.** Click an edge and choose *Forbid this dependency* to turn it into a rule in `faultline.yml`. Click a system and *Plan a new dependency*. Agents read both through faultline on their next call.
 - **Timeline.** Commits made during the session become steps, and so do agent turns. Scrub back through them, or compare each step to the one before.
@@ -196,10 +198,33 @@ The action runs from its own source, so it needs no package registry. Every pull
 1. **List files.** A snapshot is a git ref (read straight from the object store, no checkout), the staged index, or the working tree.
 2. **Parse.** Each file goes to its language's extractor. Results are cached by git blob hash, so after the first run a snapshot of a large repo rebuilds in a fraction of a second.
 3. **Resolve.** Each import is resolved by its language's rules, and every edge is tagged exact or inferred.
-4. **Assign.** Each file goes to a system and a module (the first folder under the system's root).
+4. **Assign.** Each file goes to a system and a module (the first folder under the system's root, named after its folder when a system spans several).
 5. **Aggregate and diff.** File edges roll up into module and system edges, and two snapshots are compared.
 
 Every repo named above builds its full graph in under a second on a laptop, cold, with no cache. Replaying the last 260 commits of the Astro monorepo takes about 30 seconds.
+
+## Footprint
+
+```
+$ fault footprint astro/app/entrypoint/prod --why zod
+astro/app/entrypoint/prod  packages/astro/src/core/app/entrypoints/virtual/prod.ts
+Loads 159 files at startup across 11 systems.
+  Runtime                      37 of 76
+  Routing                      35 of 41
+  Request handling             30 of 59
+  ...
+npm at startup: @oslojs/encoding, clsx, cookie, devalue, html-escaper, piccolore, unstorage, zod
+
+Cut points: stop importing the file and this many files stop loading at startup
+    11  astro/src/core/routing/handler.ts
+     ...
+     4  astro/src/core/session/provider.ts  drops unstorage
+
+Why zod loads at startup
+  ... > core/fetch/fetch-state.ts {FetchState} > core/encryption.ts {generateCspDigest} > core/csp/config.ts {ALGORITHMS, CspHash}
+```
+
+Startup means static, non-type imports reachable from the entry; files reached only through `import()` count as on demand. Cut points come from the dominator tree of that graph: every startup path to a file passes through its dominators, so no longer importing one drops its whole subtree. It counts files and packages, not bytes or milliseconds, and a bundler may still tree-shake some of what it lists.
 
 ## Limits
 
