@@ -1,0 +1,80 @@
+diff --git a/packages/astro/src/core/constants.ts b/packages/astro/src/core/constants.ts
+index 9816483..1b4fe55 100644
+--- a/packages/astro/src/core/constants.ts
++++ b/packages/astro/src/core/constants.ts
+@@ -6,6 +6,10 @@ export const ASTRO_GENERATOR = `Astro v${ASTRO_VERSION}`;
+ /**
+  * Set by internal handlers (e.g. PagesHandler) to signal that a
+  * response should be replaced with the corresponding error page.
++ *
++ * Also set, with the failing error's name, on the final response of a 500
++ * rendered by the production default error strategy when the process is
++ * being run by a coding agent, so the agent can see what failed.
+  */
+ export const ASTRO_ERROR_HEADER = 'X-Astro-Error';
+ 
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..cff4b18 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,6 +1,8 @@
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
+ import type { RenderErrorOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
++import { isRunByAgent } from '../../cli/agent.js';
++import { ASTRO_ERROR_HEADER } from '../constants.js';
+ import { getEnvironment } from '../environment/index.js';
+ import { FetchState } from '../fetch/fetch-state.js';
+ import { prepareResponse } from '../app/prepare-response.js';
+@@ -16,6 +18,17 @@ import { getErrorRoutePath } from '../../i18n/error-routes.js';
+ import { getOutputFilename } from '../output-filename.js';
+ import { rewroteToEmptyErrorResponse } from './handler.js';
+ 
++/**
++ * Marks a 500 response with the failing error's name so a coding agent
++ * debugging the site can see what failed, when one is running the process.
++ */
++function withAgentErrorHeader(response: Response, status: 404 | 500, error: unknown): Response {
++	if (status === 500 && isRunByAgent()) {
++		response.headers.set(ASTRO_ERROR_HEADER, error instanceof Error ? error.name : 'Error');
++	}
++	return response;
++}
++
+ type ErrorPagePath =
+ 	| `${string}/404`
+ 	| `${string}/500`
+@@ -91,13 +104,13 @@ export async function renderDefaultError(
+ 
+ 					const newResponse = mergeResponses(response, originalResponse, override);
+ 					prepareResponse(newResponse, resolvedRenderOptions);
+-					return newResponse;
++					return withAgentErrorHeader(newResponse, status, error);
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+ 					const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 					prepareResponse(response, resolvedRenderOptions);
+-					return response;
++					return withAgentErrorHeader(response, status, error);
+ 				}
+ 			}
+ 		}
+@@ -136,7 +149,7 @@ export async function renderDefaultError(
+ 			}
+ 			const newResponse = mergeResponses(response, originalResponse);
+ 			prepareResponse(newResponse, resolvedRenderOptions);
+-			return newResponse;
++			return withAgentErrorHeader(newResponse, status, error);
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+ 			if (skipMiddleware === false) {
+@@ -156,7 +169,7 @@ export async function renderDefaultError(
+ 
+ 	const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 	prepareResponse(response, resolvedRenderOptions);
+-	return response;
++	return withAgentErrorHeader(response, status, error);
+ }
+ 
+ function mergeResponses(

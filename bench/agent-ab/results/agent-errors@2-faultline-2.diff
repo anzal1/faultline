@@ -1,0 +1,122 @@
+diff --git a/packages/astro/src/cli/agent.ts b/packages/astro/src/cli/agent.ts
+index 4333f3b..4327d75 100644
+--- a/packages/astro/src/cli/agent.ts
++++ b/packages/astro/src/cli/agent.ts
+@@ -1,13 +1,4 @@
+-import { detectAgenticEnvironment } from 'am-i-vibing';
+-
+-export function isRunByAgent(): boolean {
+-	try {
+-		// "hybrid" environments such as Warp may not actually be running an AI agent.
+-		return detectAgenticEnvironment().type === 'agent';
+-	} catch {
+-		return false;
+-	}
+-}
++export { isRunByAgent } from '../core/util/is-run-by-agent.js';
+ 
+ export function supportsAgentAutoBackgrounding(platform: NodeJS.Platform): boolean {
+ 	// Detached children remain in agent-owned Windows Job Objects and are terminated with them.
+diff --git a/packages/astro/src/core/constants.ts b/packages/astro/src/core/constants.ts
+index 9816483..4444742 100644
+--- a/packages/astro/src/core/constants.ts
++++ b/packages/astro/src/core/constants.ts
+@@ -9,6 +9,12 @@ export const ASTRO_GENERATOR = `Astro v${ASTRO_VERSION}`;
+  */
+ export const ASTRO_ERROR_HEADER = 'X-Astro-Error';
+ 
++/**
++ * Set on production 500 responses to the crashing error's name, so a coding
++ * agent debugging the site can see what failed without server log access.
++ */
++export const AGENT_ERROR_HEADER = 'X-Astro-Error';
++
+ /**
+  * The value of the `component` field of the default 404 page, which is used when there is no user-provided 404.astro page.
+  */
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..8912d04 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,6 +1,7 @@
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
+-import type { RenderErrorOptions } from '../app/base.js';
++import type { RenderErrorOptions, ResolvedRenderOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
++import { AGENT_ERROR_HEADER } from '../constants.js';
+ import { getEnvironment } from '../environment/index.js';
+ import { FetchState } from '../fetch/fetch-state.js';
+ import { prepareResponse } from '../app/prepare-response.js';
+@@ -12,6 +13,7 @@ import { matchRoute } from '../routing/match.js';
+ import { getRouteTable } from '../routing/route-table.js';
+ import { provideSession } from '../session/provider.js';
+ import { validateHost } from '../app/validate-headers.js';
++import { isRunByAgent } from '../util/is-run-by-agent.js';
+ import { getErrorRoutePath } from '../../i18n/error-routes.js';
+ import { getOutputFilename } from '../output-filename.js';
+ import { rewroteToEmptyErrorResponse } from './handler.js';
+@@ -90,14 +92,12 @@ export async function renderDefaultError(
+ 					const override = { status, removeContentEncodingHeaders: true };
+ 
+ 					const newResponse = mergeResponses(response, originalResponse, override);
+-					prepareResponse(newResponse, resolvedRenderOptions);
+-					return newResponse;
++					return finalizeErrorResponse(newResponse, status, error, resolvedRenderOptions);
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+ 					const response = mergeResponses(new Response(null, { status }), originalResponse);
+-					prepareResponse(response, resolvedRenderOptions);
+-					return response;
++					return finalizeErrorResponse(response, status, error, resolvedRenderOptions);
+ 				}
+ 			}
+ 		}
+@@ -135,8 +135,7 @@ export async function renderDefaultError(
+ 				});
+ 			}
+ 			const newResponse = mergeResponses(response, originalResponse);
+-			prepareResponse(newResponse, resolvedRenderOptions);
+-			return newResponse;
++			return finalizeErrorResponse(newResponse, status, error, resolvedRenderOptions);
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+ 			if (skipMiddleware === false) {
+@@ -155,7 +154,25 @@ export async function renderDefaultError(
+ 	}
+ 
+ 	const response = mergeResponses(new Response(null, { status }), originalResponse);
++	return finalizeErrorResponse(response, status, error, resolvedRenderOptions);
++}
++
++/**
++ * Finalizes an error response: appends cookies, marks it sent, and — when
++ * the process is being run by a coding agent — tags 500 responses with the
++ * crashing error's name so the agent can see what failed without server log
++ * access.
++ */
++function finalizeErrorResponse(
++	response: Response,
++	status: 404 | 500,
++	error: unknown,
++	resolvedRenderOptions: ResolvedRenderOptions,
++): Response {
+ 	prepareResponse(response, resolvedRenderOptions);
++	if (status === 500 && error instanceof Error && isRunByAgent()) {
++		response.headers.set(AGENT_ERROR_HEADER, error.name);
++	}
+ 	return response;
+ }
+ 
+
++++ new file packages/astro/src/core/util/is-run-by-agent.ts
+import { detectAgenticEnvironment } from 'am-i-vibing';
+
+export function isRunByAgent(): boolean {
+	try {
+		// "hybrid" environments such as Warp may not actually be running an AI agent.
+		return detectAgenticEnvironment().type === 'agent';
+	} catch {
+		return false;
+	}
+}

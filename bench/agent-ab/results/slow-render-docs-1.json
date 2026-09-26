@@ -1,0 +1,53 @@
+{
+  "id": "slow-render-docs-1",
+  "task": "slow-render",
+  "arm": "docs",
+  "i": 1,
+  "exit": 0,
+  "wallMs": 104460,
+  "reads": 8,
+  "searches": 13,
+  "edits": 6,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 28,
+  "cost": 0.3360446000000001,
+  "usage": {
+    "input_tokens": 54,
+    "cache_creation_input_tokens": 23506,
+    "cache_read_input_tokens": 853513,
+    "output_tokens": 7121,
+    "output_tokens_details": {
+      "thinking_tokens": 1267
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 23506,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 99633,
+  "result": "Good, that matches. The change is complete and small: `renderPage` now times its inner render, and if it exceeds 500ms, logs a warning via the optional `logger` param with the route and duration formatted using `getTimeStat` (the same helper `astro build` uses for timings). The call site in `packages/astro/src/core/pages/handler.ts` now passes its `logger` through.",
+  "violations": [
+    {
+      "from": "runtime",
+      "to": "build",
+      "evidence": [
+        "packages/astro/src/runtime/server/render/page.ts -> packages/astro/src/core/build/util.ts"
+      ]
+    }
+  ],
+  "newEdges": [
+    "runtime -> build"
+  ],
+  "filesChanged": 2,
+  "done": true,
+  "diffLines": 63
+}

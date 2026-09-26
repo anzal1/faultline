@@ -1,0 +1,43 @@
+{
+  "id": "agent-errors-none-1",
+  "task": "agent-errors",
+  "arm": "none",
+  "i": 1,
+  "exit": 0,
+  "wallMs": 140501,
+  "reads": 10,
+  "searches": 12,
+  "edits": 4,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 27,
+  "cost": 0.4159058,
+  "usage": {
+    "input_tokens": 54,
+    "cache_creation_input_tokens": 32139,
+    "cache_read_input_tokens": 883359,
+    "output_tokens": 11057,
+    "output_tokens_details": {
+      "thinking_tokens": 5429
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 32139,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 135323,
+  "result": "This looks correct. All four return paths in `renderDefaultError` now attach the header when the status is 500 and the process is agent-run.\n\nChanges made:\n- `packages/astro/src/core/errors/default-handler.ts`: added `setAgentDebugHeader`, which sets `X-Astro-Error` (reusing the existing `ASTRO_ERROR_HEADER` constant) to the thrown error's `name` on 500 responses, gated by `isRunByAgent()` from `c",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": false,
+  "diffLines": 69
+}

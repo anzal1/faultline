@@ -1,0 +1,94 @@
+diff --git a/packages/astro/src/core/build/util.ts b/packages/astro/src/core/build/util.ts
+index 4af898c..9be0e38 100644
+--- a/packages/astro/src/core/build/util.ts
++++ b/packages/astro/src/core/build/util.ts
+@@ -2,17 +2,7 @@ import type { Rolldown } from 'vite';
+ import type { AstroConfig } from '../../types/public/config.js';
+ import type { ViteBuildReturn } from './types.js';
+ 
+-export function getTimeStat(timeStart: number, timeEnd: number) {
+-	const buildTime = timeEnd - timeStart;
+-	if (buildTime < 1000) {
+-		return `${Math.round(buildTime)}ms`;
+-	} else if (buildTime < 60_000) {
+-		return `${(buildTime / 1000).toFixed(2)}s`;
+-	}
+-	const mins = Math.floor(buildTime / 60_000);
+-	const secs = Math.round((buildTime % 60_000) / 1000);
+-	return `${mins}m ${secs}s`;
+-}
++export { getTimeStat } from '../time.js';
+ 
+ /**
+  * Given the Astro configuration, it tells if a slash should be appended or not
+diff --git a/packages/astro/src/core/pages/handler.ts b/packages/astro/src/core/pages/handler.ts
+index 089297a..274e53f 100644
+--- a/packages/astro/src/core/pages/handler.ts
++++ b/packages/astro/src/core/pages/handler.ts
+@@ -56,6 +56,7 @@ export async function handlePages(state: FetchState, ctx: APIContext): Promise<R
+ 					state.slots ?? EMPTY_SLOTS,
+ 					streaming,
+ 					state.routeData!,
++					logger,
+ 				);
+ 			} catch (e) {
+ 				// If there is an error in the page's frontmatter or instantiation of the RenderTemplate fails midway,
+diff --git a/packages/astro/src/runtime/server/render/page.ts b/packages/astro/src/runtime/server/render/page.ts
+index f24508c..a2d9d5e 100644
+--- a/packages/astro/src/runtime/server/render/page.ts
++++ b/packages/astro/src/runtime/server/render/page.ts
+@@ -1,6 +1,8 @@
+ import type { RouteData, SSRResult } from '../../../types/public/internal.js';
++import type { AstroLogger } from '../../../core/logger/core.js';
+ import { isRoute404, isRoute500 } from '../../../core/routing/internal/route-errors.js';
+ import { isPropagatingHint } from '../../../core/head-propagation/resolver.js';
++import { getTimeStat } from '../../../core/time.js';
+ import { renderToAsyncIterable, renderToReadableStream, renderToString } from './astro/render.js';
+ import { encoder } from './common.js';
+ import { type NonAstroPageComponent, renderComponentToString } from './component.js';
+@@ -9,7 +11,32 @@ import type { AstroComponentFactory } from './index.js';
+ import { isDeno, isNode, isWorkerd } from './util.js';
+ import { isAstroComponentFactory } from './astro/factory.js';
+ 
++const SLOW_RENDER_THRESHOLD_MS = 500;
++
+ export async function renderPage(
++	result: SSRResult,
++	componentFactory: AstroComponentFactory | NonAstroPageComponent,
++	props: any,
++	children: any,
++	streaming: boolean,
++	route: RouteData | undefined,
++	logger: AstroLogger,
++): Promise<Response> {
++	const renderStart = performance.now();
++	try {
++		return await renderPageInner(result, componentFactory, props, children, streaming, route);
++	} finally {
++		const renderEnd = performance.now();
++		if (renderEnd - renderStart > SLOW_RENDER_THRESHOLD_MS) {
++			logger.warn(
++				'router',
++				`Rendering ${route?.route ?? result.pathname} took ${getTimeStat(renderStart, renderEnd)}`,
++			);
++		}
++	}
++}
++
++async function renderPageInner(
+ 	result: SSRResult,
+ 	componentFactory: AstroComponentFactory | NonAstroPageComponent,
+ 	props: any,
+
++++ new file packages/astro/src/core/time.ts
+export function getTimeStat(timeStart: number, timeEnd: number) {
+	const buildTime = timeEnd - timeStart;
+	if (buildTime < 1000) {
+		return `${Math.round(buildTime)}ms`;
+	} else if (buildTime < 60_000) {
+		return `${(buildTime / 1000).toFixed(2)}s`;
+	}
+	const mins = Math.floor(buildTime / 60_000);
+	const secs = Math.round((buildTime % 60_000) / 1000);
+	return `${mins}m ${secs}s`;
+}

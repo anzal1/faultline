@@ -1,0 +1,66 @@
+diff --git a/packages/astro/src/core/routing/trailing-slash-handler.ts b/packages/astro/src/core/routing/trailing-slash-handler.ts
+index 223285f..15e30dd 100644
+--- a/packages/astro/src/core/routing/trailing-slash-handler.ts
++++ b/packages/astro/src/core/routing/trailing-slash-handler.ts
+@@ -49,6 +49,21 @@ export function handleTrailingSlash(state: FetchState): Response | undefined {
+ 	return response;
+ }
+ 
++/**
++ * Detects duplicate trailing slashes in `pathname` (e.g. `/about//`) and
++ * returns the collapsed target, or `undefined` when there's nothing to
++ * collapse. Shared by the dev server's trailing-slash middleware
++ * (`evaluateTrailingSlash`) and this module's production redirect handler
++ * so both apply the identical rule instead of each reimplementing it.
++ */
++export function collapseDuplicateTrailingSlashRedirect(
++	pathname: string,
++	keepTrailingSlash: boolean,
++): string | undefined {
++	const collapsed = collapseDuplicateTrailingSlashes(pathname, keepTrailingSlash);
++	return pathname && collapsed !== pathname ? collapsed : undefined;
++}
++
+ function redirectTrailingSlash(
+ 	trailingSlash: 'always' | 'never' | 'ignore',
+ 	pathname: string,
+@@ -59,9 +74,9 @@ function redirectTrailingSlash(
+ 	}
+ 
+ 	// Redirect multiple trailing slashes to collapsed path
+-	const path = collapseDuplicateTrailingSlashes(pathname, trailingSlash !== 'never');
+-	if (path !== pathname) {
+-		return path;
++	const collapsed = collapseDuplicateTrailingSlashRedirect(pathname, trailingSlash !== 'never');
++	if (collapsed !== undefined) {
++		return collapsed;
+ 	}
+ 
+ 	if (trailingSlash === 'ignore') {
+diff --git a/packages/astro/src/vite-plugin-astro-server/trailing-slash.ts b/packages/astro/src/vite-plugin-astro-server/trailing-slash.ts
+index ce93f67..6a87f2d 100644
+--- a/packages/astro/src/vite-plugin-astro-server/trailing-slash.ts
++++ b/packages/astro/src/vite-plugin-astro-server/trailing-slash.ts
+@@ -1,9 +1,6 @@
+-import {
+-	collapseDuplicateTrailingSlashes,
+-	hasFileExtension,
+-	isInternalPath,
+-} from '@astrojs/internal-helpers/path';
++import { hasFileExtension, isInternalPath } from '@astrojs/internal-helpers/path';
+ import type * as vite from 'vite';
++import { collapseDuplicateTrailingSlashRedirect } from '../core/routing/trailing-slash-handler.js';
+ import { trailingSlashMismatchTemplate } from '../template/4xx.js';
+ import type { AstroSettings } from '../types/astro.js';
+ import { writeHtmlResponse, writeRedirectResponse } from './response.js';
+@@ -44,8 +41,8 @@ export function evaluateTrailingSlash(
+ 		return { action: 'next' };
+ 	}
+ 
+-	const collapsed = collapseDuplicateTrailingSlashes(pathname, true);
+-	if (pathname && collapsed !== pathname) {
++	const collapsed = collapseDuplicateTrailingSlashRedirect(pathname, true);
++	if (collapsed !== undefined) {
+ 		return { action: 'redirect', status: 301, location: `${collapsed}${search}` };
+ 	}
+ 

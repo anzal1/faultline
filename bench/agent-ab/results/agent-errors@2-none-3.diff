@@ -1,0 +1,76 @@
+diff --git a/packages/astro/src/core/constants.ts b/packages/astro/src/core/constants.ts
+index 9816483..ad7c371 100644
+--- a/packages/astro/src/core/constants.ts
++++ b/packages/astro/src/core/constants.ts
+@@ -6,6 +6,9 @@ export const ASTRO_GENERATOR = `Astro v${ASTRO_VERSION}`;
+ /**
+  * Set by internal handlers (e.g. PagesHandler) to signal that a
+  * response should be replaced with the corresponding error page.
++ *
++ * Also reused on the final 500 response (when run by a coding agent) to
++ * carry the failing error's name for debugging.
+  */
+ export const ASTRO_ERROR_HEADER = 'X-Astro-Error';
+ 
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..c0401cd 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,6 +1,8 @@
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
++import { detectAgenticEnvironment } from 'am-i-vibing';
+ import type { RenderErrorOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
++import { ASTRO_ERROR_HEADER } from '../constants.js';
+ import { getEnvironment } from '../environment/index.js';
+ import { FetchState } from '../fetch/fetch-state.js';
+ import { prepareResponse } from '../app/prepare-response.js';
+@@ -26,6 +28,9 @@ type ErrorPagePath =
+ 	| `${string}404.html`
+ 	| `${string}500.html`;
+ 
++// Computed once per process: whether Astro is being run by an AI coding agent.
++const isCodingAgent = detectAgenticEnvironment().isAgentic;
++
+ /**
+  * The default error strategy used in production SSR. Attempts to render the
+  * matching error route (404.astro / 500.astro), falling back to a plain
+@@ -33,6 +38,20 @@ type ErrorPagePath =
+  * `prerenderedErrorPageFetch`.
+  */
+ export async function renderDefaultError(
++	manifest: SSRManifest,
++	request: Request,
++	options: RenderErrorOptions,
++): Promise<Response> {
++	const response = await renderErrorResponse(manifest, request, options);
++	// Surface the failing error's name to coding agents debugging the site,
++	// since they can't see server logs the way a human dev would.
++	if (isCodingAgent && options.status === 500 && options.error instanceof Error) {
++		response.headers.set(ASTRO_ERROR_HEADER, options.error.name);
++	}
++	return response;
++}
++
++async function renderErrorResponse(
+ 	manifest: SSRManifest,
+ 	request: Request,
+ 	{
+@@ -125,7 +144,7 @@ export async function renderDefaultError(
+ 			if (
+ 				rewroteToEmptyErrorResponse(skipMiddleware, errorRouteData, errorState.routeData, response)
+ 			) {
+-				return renderDefaultError(manifest, request, {
++				return renderErrorResponse(manifest, request, {
+ 					...resolvedRenderOptions,
+ 					status,
+ 					error,
+@@ -140,7 +159,7 @@ export async function renderDefaultError(
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+ 			if (skipMiddleware === false) {
+-				return renderDefaultError(manifest, request, {
++				return renderErrorResponse(manifest, request, {
+ 					...resolvedRenderOptions,
+ 					status,
+ 					error,

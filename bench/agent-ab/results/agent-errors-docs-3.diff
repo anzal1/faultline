@@ -1,0 +1,76 @@
+diff --git a/packages/astro/src/core/app/prepare-response.ts b/packages/astro/src/core/app/prepare-response.ts
+index 1c7f3d6..fd733de 100644
+--- a/packages/astro/src/core/app/prepare-response.ts
++++ b/packages/astro/src/core/app/prepare-response.ts
+@@ -1,3 +1,4 @@
++import { detectAgenticEnvironment } from 'am-i-vibing';
+ import { responseSentSymbol } from '../constants.js';
+ import { getSetCookiesFromResponse } from '../cookies/index.js';
+ 
+@@ -10,7 +11,11 @@ import { getSetCookiesFromResponse } from '../cookies/index.js';
+  */
+ export function prepareResponse(
+ 	response: Response,
+-	{ addCookieHeader }: { addCookieHeader: boolean },
++	{
++		addCookieHeader,
++		status,
++		error,
++	}: { addCookieHeader: boolean; status?: number; error?: unknown },
+ ): void {
+ 	if (addCookieHeader) {
+ 		for (const setCookieHeaderValue of getSetCookiesFromResponse(response)) {
+@@ -18,5 +23,15 @@ export function prepareResponse(
+ 		}
+ 	}
+ 
++	// Surface the error's name to coding agents debugging the site, so they don't
++	// have to dig through server logs to see what failed.
++	if (status === 500 && error instanceof Error) {
++		try {
++			if (detectAgenticEnvironment().isAgentic) {
++				response.headers.set('X-Astro-Error', error.name);
++			}
++		} catch {}
++	}
++
+ 	Reflect.set(response, responseSentSymbol, true);
+ }
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..fb3122d 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -90,13 +90,13 @@ export async function renderDefaultError(
+ 					const override = { status, removeContentEncodingHeaders: true };
+ 
+ 					const newResponse = mergeResponses(response, originalResponse, override);
+-					prepareResponse(newResponse, resolvedRenderOptions);
++					prepareResponse(newResponse, { ...resolvedRenderOptions, status, error });
+ 					return newResponse;
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+ 					const response = mergeResponses(new Response(null, { status }), originalResponse);
+-					prepareResponse(response, resolvedRenderOptions);
++					prepareResponse(response, { ...resolvedRenderOptions, status, error });
+ 					return response;
+ 				}
+ 			}
+@@ -135,7 +135,7 @@ export async function renderDefaultError(
+ 				});
+ 			}
+ 			const newResponse = mergeResponses(response, originalResponse);
+-			prepareResponse(newResponse, resolvedRenderOptions);
++			prepareResponse(newResponse, { ...resolvedRenderOptions, status, error });
+ 			return newResponse;
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+@@ -155,7 +155,7 @@ export async function renderDefaultError(
+ 	}
+ 
+ 	const response = mergeResponses(new Response(null, { status }), originalResponse);
+-	prepareResponse(response, resolvedRenderOptions);
++	prepareResponse(response, { ...resolvedRenderOptions, status, error });
+ 	return response;
+ }
+ 

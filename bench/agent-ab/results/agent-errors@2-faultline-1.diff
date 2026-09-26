@@ -1,0 +1,96 @@
+diff --git a/packages/astro/src/cli/agent.ts b/packages/astro/src/cli/agent.ts
+index 4333f3b..7c68fc3 100644
+--- a/packages/astro/src/cli/agent.ts
++++ b/packages/astro/src/cli/agent.ts
+@@ -1,13 +1,4 @@
+-import { detectAgenticEnvironment } from 'am-i-vibing';
+-
+-export function isRunByAgent(): boolean {
+-	try {
+-		// "hybrid" environments such as Warp may not actually be running an AI agent.
+-		return detectAgenticEnvironment().type === 'agent';
+-	} catch {
+-		return false;
+-	}
+-}
++export { isRunByAgent } from '../core/agent.js';
+ 
+ export function supportsAgentAutoBackgrounding(platform: NodeJS.Platform): boolean {
+ 	// Detached children remain in agent-owned Windows Job Objects and are terminated with them.
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..dd22302 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,6 +1,8 @@
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
+ import type { RenderErrorOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
++import { isRunByAgent } from '../agent.js';
++import { ASTRO_ERROR_HEADER } from '../constants.js';
+ import { getEnvironment } from '../environment/index.js';
+ import { FetchState } from '../fetch/fetch-state.js';
+ import { prepareResponse } from '../app/prepare-response.js';
+@@ -13,6 +15,7 @@ import { getRouteTable } from '../routing/route-table.js';
+ import { provideSession } from '../session/provider.js';
+ import { validateHost } from '../app/validate-headers.js';
+ import { getErrorRoutePath } from '../../i18n/error-routes.js';
++import { createSafeError } from './utils.js';
+ import { getOutputFilename } from '../output-filename.js';
+ import { rewroteToEmptyErrorResponse } from './handler.js';
+ 
+@@ -91,12 +94,14 @@ export async function renderDefaultError(
+ 
+ 					const newResponse = mergeResponses(response, originalResponse, override);
+ 					prepareResponse(newResponse, resolvedRenderOptions);
++					addAgentErrorHeader(newResponse, status, error);
+ 					return newResponse;
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+ 					const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 					prepareResponse(response, resolvedRenderOptions);
++					addAgentErrorHeader(response, status, error);
+ 					return response;
+ 				}
+ 			}
+@@ -136,6 +141,7 @@ export async function renderDefaultError(
+ 			}
+ 			const newResponse = mergeResponses(response, originalResponse);
+ 			prepareResponse(newResponse, resolvedRenderOptions);
++			addAgentErrorHeader(newResponse, status, error);
+ 			return newResponse;
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+@@ -156,9 +162,20 @@ export async function renderDefaultError(
+ 
+ 	const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 	prepareResponse(response, resolvedRenderOptions);
++	addAgentErrorHeader(response, status, error);
+ 	return response;
+ }
+ 
++/**
++ * Marks a 500 response with the failing error's name so a coding agent
++ * debugging the site can see what failed without digging through logs.
++ */
++function addAgentErrorHeader(response: Response, status: number, error: unknown) {
++	if (status === 500 && error != null && isRunByAgent()) {
++		response.headers.set(ASTRO_ERROR_HEADER, createSafeError(error).name);
++	}
++}
++
+ function mergeResponses(
+ 	newResponse: Response,
+ 	originalResponse?: Response,
+
++++ new file packages/astro/src/core/agent.ts
+import { detectAgenticEnvironment } from 'am-i-vibing';
+
+export function isRunByAgent(): boolean {
+	try {
+		// "hybrid" environments such as Warp may not actually be running an AI agent.
+		return detectAgenticEnvironment().type === 'agent';
+	} catch {
+		return false;
+	}
+}

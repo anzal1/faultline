@@ -1,0 +1,84 @@
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..c92d437 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,11 +1,13 @@
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
+ import type { RenderErrorOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
++import { isRunByAgent } from '../../cli/agent.js';
+ import { getEnvironment } from '../environment/index.js';
+ import { FetchState } from '../fetch/fetch-state.js';
+ import { prepareResponse } from '../app/prepare-response.js';
+ import { attachCookiesToResponse } from '../cookies/index.js';
+ import { getCookiesFromResponse } from '../cookies/response.js';
++import { ASTRO_ERROR_HEADER } from '../constants.js';
+ import { handleMiddleware } from '../middleware/astro-middleware.js';
+ import { handlePages } from '../pages/handler.js';
+ import { matchRoute } from '../routing/match.js';
+@@ -89,13 +91,21 @@ export async function renderDefaultError(
+ 					// not match the body we provide and need to be removed.
+ 					const override = { status, removeContentEncodingHeaders: true };
+ 
+-					const newResponse = mergeResponses(response, originalResponse, override);
++					const newResponse = withAgentErrorHeader(
++						mergeResponses(response, originalResponse, override),
++						status,
++						error,
++					);
+ 					prepareResponse(newResponse, resolvedRenderOptions);
+ 					return newResponse;
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+-					const response = mergeResponses(new Response(null, { status }), originalResponse);
++					const response = withAgentErrorHeader(
++						mergeResponses(new Response(null, { status }), originalResponse),
++						status,
++						error,
++					);
+ 					prepareResponse(response, resolvedRenderOptions);
+ 					return response;
+ 				}
+@@ -134,7 +144,11 @@ export async function renderDefaultError(
+ 					pathname: resolvedPathname,
+ 				});
+ 			}
+-			const newResponse = mergeResponses(response, originalResponse);
++			const newResponse = withAgentErrorHeader(
++				mergeResponses(response, originalResponse),
++				status,
++				error,
++			);
+ 			prepareResponse(newResponse, resolvedRenderOptions);
+ 			return newResponse;
+ 		} catch {
+@@ -154,11 +168,27 @@ export async function renderDefaultError(
+ 		}
+ 	}
+ 
+-	const response = mergeResponses(new Response(null, { status }), originalResponse);
++	const response = withAgentErrorHeader(
++		mergeResponses(new Response(null, { status }), originalResponse),
++		status,
++		error,
++	);
+ 	prepareResponse(response, resolvedRenderOptions);
+ 	return response;
+ }
+ 
++/**
++ * Adds the `X-Astro-Error` header with the error's name to 500 responses,
++ * but only when the process is being run by an AI coding agent (e.g. Claude
++ * Code), so the agent can see what failed without a human reading logs.
++ */
++function withAgentErrorHeader(response: Response, status: 404 | 500, error: unknown): Response {
++	if (status === 500 && error instanceof Error && isRunByAgent()) {
++		response.headers.set(ASTRO_ERROR_HEADER, error.name);
++	}
++	return response;
++}
++
+ function mergeResponses(
+ 	newResponse: Response,
+ 	originalResponse?: Response,

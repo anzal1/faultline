@@ -1,0 +1,52 @@
+{
+  "id": "agent-errors@2-docs-3",
+  "task": "agent-errors@2",
+  "round": "2",
+  "arm": "docs",
+  "i": 3,
+  "exit": 0,
+  "wallMs": 146668,
+  "reads": 11,
+  "searches": 12,
+  "edits": 5,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 29,
+  "cost": 0.5074666,
+  "usage": {
+    "input_tokens": 58,
+    "cache_creation_input_tokens": 38614,
+    "cache_read_input_tokens": 1182373,
+    "output_tokens": 11642,
+    "output_tokens_details": {
+      "thinking_tokens": 5737
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 38614,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 141557,
+  "result": "Confirmed — it's a normal (production) dependency, so importing it into the runtime error handler is safe.\n\nThe change is complete: `packages/astro/src/core/errors/default-handler.ts` now sets `X-Astro-Error` (with the error's `name`) on 500 responses, but only when `isRunByAgent()` (reused from `packages/astro/src/cli/agent.ts`, which wraps `am-i-vibing`) reports the process is running under a co",
+  "violations": [
+    {
+      "from": "core-shared",
+      "to": "cli",
+      "evidence": [
+        "packages/astro/src/core/errors/default-handler.ts -> packages/astro/src/cli/agent.ts"
+      ]
+    }
+  ],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": true,
+  "diffLines": 63
+}

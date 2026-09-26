@@ -1,0 +1,43 @@
+{
+  "id": "agent-errors-docs-1",
+  "task": "agent-errors",
+  "arm": "docs",
+  "i": 1,
+  "exit": 0,
+  "wallMs": 77143,
+  "reads": 6,
+  "searches": 9,
+  "edits": 5,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 21,
+  "cost": 0.30214959999999996,
+  "usage": {
+    "input_tokens": 38,
+    "cache_creation_input_tokens": 28651,
+    "cache_read_input_tokens": 662898,
+    "output_tokens": 5489,
+    "output_tokens_details": {
+      "thinking_tokens": 1580
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 28651,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 71641,
+  "result": "This looks correct and complete. All four response exit points in `renderDefaultError` (production/container \"default\" error strategy) now call `addAgentErrorHeader`, which sets `X-Astro-Error` to the error's name only for 500 responses and only when `am-i-vibing`'s `detectAgenticEnvironment()` (the same detection Astro's CLI already uses) reports an agentic environment.",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": true,
+  "diffLines": 59
+}

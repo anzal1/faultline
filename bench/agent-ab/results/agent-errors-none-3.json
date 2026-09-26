@@ -1,0 +1,43 @@
+{
+  "id": "agent-errors-none-3",
+  "task": "agent-errors",
+  "arm": "none",
+  "i": 3,
+  "exit": 0,
+  "wallMs": 82180,
+  "reads": 5,
+  "searches": 9,
+  "edits": 5,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 20,
+  "cost": 0.27924899999999997,
+  "usage": {
+    "input_tokens": 40,
+    "cache_creation_input_tokens": 24437,
+    "cache_read_input_tokens": 616505,
+    "output_tokens": 5812,
+    "output_tokens_details": {
+      "thinking_tokens": 1726
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 24437,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 77069,
+  "result": "This looks correct and complete. All four response-construction points in the production (default) error handler now set `X-Astro-Error` to the error's `name` when the status is 500, the error is an `Error` instance, and `am-i-vibing`'s `detectAgenticEnvironment().isAgentic` (the same detection the CLI already uses) reports true.",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": true,
+  "diffLines": 60
+}

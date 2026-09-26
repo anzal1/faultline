@@ -1,0 +1,58 @@
+diff --git a/packages/astro/src/core/pages/handler.ts b/packages/astro/src/core/pages/handler.ts
+index 089297a..3f325bf 100644
+--- a/packages/astro/src/core/pages/handler.ts
++++ b/packages/astro/src/core/pages/handler.ts
+@@ -55,6 +55,7 @@ export async function handlePages(state: FetchState, ctx: APIContext): Promise<R
+ 					props,
+ 					state.slots ?? EMPTY_SLOTS,
+ 					streaming,
++					logger,
+ 					state.routeData!,
+ 				);
+ 			} catch (e) {
+diff --git a/packages/astro/src/runtime/server/render/page.ts b/packages/astro/src/runtime/server/render/page.ts
+index f24508c..efb74d2 100644
+--- a/packages/astro/src/runtime/server/render/page.ts
++++ b/packages/astro/src/runtime/server/render/page.ts
+@@ -1,6 +1,8 @@
+ import type { RouteData, SSRResult } from '../../../types/public/internal.js';
++import { getTimeStat } from '../../../core/build/util.js';
+ import { isRoute404, isRoute500 } from '../../../core/routing/internal/route-errors.js';
+ import { isPropagatingHint } from '../../../core/head-propagation/resolver.js';
++import type { AstroLogger } from '../../../core/logger/core.js';
+ import { renderToAsyncIterable, renderToReadableStream, renderToString } from './astro/render.js';
+ import { encoder } from './common.js';
+ import { type NonAstroPageComponent, renderComponentToString } from './component.js';
+@@ -9,7 +11,32 @@ import type { AstroComponentFactory } from './index.js';
+ import { isDeno, isNode, isWorkerd } from './util.js';
+ import { isAstroComponentFactory } from './astro/factory.js';
+ 
++const SLOW_RENDER_THRESHOLD_MS = 500;
++
+ export async function renderPage(
++	result: SSRResult,
++	componentFactory: AstroComponentFactory | NonAstroPageComponent,
++	props: any,
++	children: any,
++	streaming: boolean,
++	logger: AstroLogger,
++	route?: RouteData,
++): Promise<Response> {
++	const renderStart = performance.now();
++	try {
++		return await renderPageImpl(result, componentFactory, props, children, streaming, route);
++	} finally {
++		const renderEnd = performance.now();
++		if (renderEnd - renderStart > SLOW_RENDER_THRESHOLD_MS) {
++			logger.warn(
++				'router',
++				`Rendering ${route?.route ?? result.pathname} took ${getTimeStat(renderStart, renderEnd)}`,
++			);
++		}
++	}
++}
++
++async function renderPageImpl(
+ 	result: SSRResult,
+ 	componentFactory: AstroComponentFactory | NonAstroPageComponent,
+ 	props: any,

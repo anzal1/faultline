@@ -1,0 +1,49 @@
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..17a5ac8 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,3 +1,4 @@
++import { detectAgenticEnvironment } from 'am-i-vibing';
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
+ import type { RenderErrorOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
+@@ -33,6 +34,21 @@ type ErrorPagePath =
+  * `prerenderedErrorPageFetch`.
+  */
+ export async function renderDefaultError(
++	manifest: SSRManifest,
++	request: Request,
++	options: RenderErrorOptions,
++): Promise<Response> {
++	const response = await renderDefaultErrorResponse(manifest, request, options);
++	// Coding agents debugging a site can't see server logs, so surface the
++	// error's name on the response itself when we know we're running under one.
++	const { status, error } = options;
++	if (status === 500 && error !== undefined && detectAgenticEnvironment().isAgentic) {
++		response.headers.set('X-Astro-Error', error instanceof Error ? error.name : 'Error');
++	}
++	return response;
++}
++
++async function renderDefaultErrorResponse(
+ 	manifest: SSRManifest,
+ 	request: Request,
+ 	{
+@@ -125,7 +141,7 @@ export async function renderDefaultError(
+ 			if (
+ 				rewroteToEmptyErrorResponse(skipMiddleware, errorRouteData, errorState.routeData, response)
+ 			) {
+-				return renderDefaultError(manifest, request, {
++				return renderDefaultErrorResponse(manifest, request, {
+ 					...resolvedRenderOptions,
+ 					status,
+ 					error,
+@@ -140,7 +156,7 @@ export async function renderDefaultError(
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+ 			if (skipMiddleware === false) {
+-				return renderDefaultError(manifest, request, {
++				return renderDefaultErrorResponse(manifest, request, {
+ 					...resolvedRenderOptions,
+ 					status,
+ 					error,

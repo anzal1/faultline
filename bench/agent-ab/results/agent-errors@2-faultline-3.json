@@ -1,0 +1,44 @@
+{
+  "id": "agent-errors@2-faultline-3",
+  "task": "agent-errors@2",
+  "round": "2",
+  "arm": "faultline",
+  "i": 3,
+  "exit": 0,
+  "wallMs": 133720,
+  "reads": 8,
+  "searches": 11,
+  "edits": 5,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 25,
+  "cost": 0.40661339999999996,
+  "usage": {
+    "input_tokens": 48,
+    "cache_creation_input_tokens": 32028,
+    "cache_read_input_tokens": 899827,
+    "output_tokens": 9844,
+    "output_tokens_details": {
+      "thinking_tokens": 5145
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 32028,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 128401,
+  "result": "Good, matches the convention already used elsewhere (`am-i-vibing` first). The change is complete and minimal.\n\n**Summary:** In `packages/astro/src/core/errors/default-handler.ts` (the production error-rendering strategy used by the App), added an `X-Astro-Error` header set to the error's `name` on 500 responses, gated on `am-i-vibing`'s `detectAgenticEnvironment().isAgentic` — the same detection ",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": true,
+  "diffLines": 61
+}

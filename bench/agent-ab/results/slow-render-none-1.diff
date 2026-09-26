@@ -1,0 +1,54 @@
+diff --git a/packages/astro/src/runtime/server/render/page.ts b/packages/astro/src/runtime/server/render/page.ts
+index f24508c..84a6ecd 100644
+--- a/packages/astro/src/runtime/server/render/page.ts
++++ b/packages/astro/src/runtime/server/render/page.ts
+@@ -1,4 +1,5 @@
+ import type { RouteData, SSRResult } from '../../../types/public/internal.js';
++import { getTimeStat } from '../../../core/build/util.js';
+ import { isRoute404, isRoute500 } from '../../../core/routing/internal/route-errors.js';
+ import { isPropagatingHint } from '../../../core/head-propagation/resolver.js';
+ import { renderToAsyncIterable, renderToReadableStream, renderToString } from './astro/render.js';
+@@ -9,6 +10,17 @@ import type { AstroComponentFactory } from './index.js';
+ import { isDeno, isNode, isWorkerd } from './util.js';
+ import { isAstroComponentFactory } from './astro/factory.js';
+ 
++const SLOW_RENDER_THRESHOLD_MS = 500;
++
++function warnIfSlowRender(result: SSRResult, route: RouteData | undefined, renderStart: number) {
++	const renderEnd = performance.now();
++	if (renderEnd - renderStart > SLOW_RENDER_THRESHOLD_MS) {
++		console.warn(
++			`[astro] Rendering ${route?.route ?? result.pathname} took ${getTimeStat(renderStart, renderEnd)}`,
++		);
++	}
++}
++
+ export async function renderPage(
+ 	result: SSRResult,
+ 	componentFactory: AstroComponentFactory | NonAstroPageComponent,
+@@ -17,6 +29,7 @@ export async function renderPage(
+ 	streaming: boolean,
+ 	route?: RouteData,
+ ): Promise<Response> {
++	const renderStart = performance.now();
+ 	if (!isAstroComponentFactory(componentFactory)) {
+ 		const nonAstroMeta = result.componentMetadata.get((componentFactory as any).moduleId);
+ 		result._metadata.headInTree = nonAstroMeta?.containsHead ?? false;
+@@ -40,6 +53,8 @@ export async function renderPage(
+ 			route,
+ 		);
+ 
++		warnIfSlowRender(result, route, renderStart);
++
+ 		const bytes = encoder.encode(str);
+ 		const headers = new Headers([
+ 			['Content-Type', 'text/html'],
+@@ -99,6 +114,8 @@ export async function renderPage(
+ 		body = await renderToString(result, componentFactory, props, children, true, route);
+ 	}
+ 
++	warnIfSlowRender(result, route, renderStart);
++
+ 	// If the Astro component returns a Response on init, return that response
+ 	if (body instanceof Response) return body;
+ 

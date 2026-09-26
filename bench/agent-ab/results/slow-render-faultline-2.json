@@ -1,0 +1,50 @@
+{
+  "id": "slow-render-faultline-2",
+  "task": "slow-render",
+  "arm": "faultline",
+  "i": 2,
+  "exit": 0,
+  "wallMs": 182076,
+  "reads": 9,
+  "searches": 16,
+  "edits": 3,
+  "faultlineCalls": [
+    "place",
+    "map",
+    "place",
+    "place",
+    "place",
+    "check"
+  ],
+  "hookWarnings": 0,
+  "turns": 36,
+  "cost": 0.5673324,
+  "usage": {
+    "input_tokens": 72,
+    "cache_creation_input_tokens": 38839,
+    "cache_read_input_tokens": 1401362,
+    "output_tokens": 13156,
+    "output_tokens_details": {
+      "thinking_tokens": 7197
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 38839,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 177176,
+  "result": "Change is confirmed clean architecturally. Summary of the change:\n\n- Added `packages/astro/src/timing.ts`, a one-line re-export of `getTimeStat` from `core/build/util.js` — the allowed bridge the faultline rules require, since `runtime` may not import `build` directly.\n- In `packages/astro/src/runtime/server/render/page.ts`, wrapped the existing render logic (renamed to `renderPageInner`) with tim",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 2,
+  "done": true,
+  "diffLines": 51
+}

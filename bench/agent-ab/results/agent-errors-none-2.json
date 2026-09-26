@@ -1,0 +1,43 @@
+{
+  "id": "agent-errors-none-2",
+  "task": "agent-errors",
+  "arm": "none",
+  "i": 2,
+  "exit": 0,
+  "wallMs": 141371,
+  "reads": 10,
+  "searches": 8,
+  "edits": 6,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 25,
+  "cost": 0.4404066,
+  "usage": {
+    "input_tokens": 50,
+    "cache_creation_input_tokens": 36409,
+    "cache_read_input_tokens": 896703,
+    "output_tokens": 11533,
+    "output_tokens_details": {
+      "thinking_tokens": 5997
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 36409,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 136009,
+  "result": "Dependency is already present. The change is complete: `packages/astro/src/core/errors/default-handler.ts` now sets `X-Astro-Error: <ErrorName>` on production 500 responses, only when `isRunByAgent()` (Astro's existing CLI agent-detection, reused from `cli/agent.ts`) returns true and a real `Error` instance is available.",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": true,
+  "diffLines": 85
+}

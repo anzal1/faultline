@@ -1,0 +1,53 @@
+{
+  "id": "slow-render-none-2",
+  "task": "slow-render",
+  "arm": "none",
+  "i": 2,
+  "exit": 0,
+  "wallMs": 126798,
+  "reads": 9,
+  "searches": 20,
+  "edits": 3,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 33,
+  "cost": 0.40437320000000004,
+  "usage": {
+    "input_tokens": 58,
+    "cache_creation_input_tokens": 29796,
+    "cache_read_input_tokens": 977566,
+    "output_tokens": 8956,
+    "output_tokens_details": {
+      "thinking_tokens": 2742
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 29796,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 121809,
+  "result": "This implements the requirement: `renderPage` now measures wall-clock time and logs a warning via `AstroLogger.warn` (reusing `getTimeStat` from `core/build/util.ts`, the same helper `astro build` uses for timings) when a page render exceeds 500ms, including the route and formatted duration. The logger is threaded in from the existing `handlePages` call site in `core/pages/handler.ts`, which alrea",
+  "violations": [
+    {
+      "from": "runtime",
+      "to": "build",
+      "evidence": [
+        "packages/astro/src/runtime/server/render/page.ts -> packages/astro/src/core/build/util.ts"
+      ]
+    }
+  ],
+  "newEdges": [
+    "runtime -> build"
+  ],
+  "filesChanged": 2,
+  "done": true,
+  "diffLines": 65
+}

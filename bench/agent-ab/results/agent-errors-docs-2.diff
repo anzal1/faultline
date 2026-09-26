@@ -1,0 +1,52 @@
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..5094d38 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -15,6 +15,8 @@ import { validateHost } from '../app/validate-headers.js';
+ import { getErrorRoutePath } from '../../i18n/error-routes.js';
+ import { getOutputFilename } from '../output-filename.js';
+ import { rewroteToEmptyErrorResponse } from './handler.js';
++import { isRunByAgent } from '../../cli/agent.js';
++import { ASTRO_ERROR_HEADER } from '../constants.js';
+ 
+ type ErrorPagePath =
+ 	| `${string}/404`
+@@ -33,6 +35,20 @@ type ErrorPagePath =
+  * `prerenderedErrorPageFetch`.
+  */
+ export async function renderDefaultError(
++	manifest: SSRManifest,
++	request: Request,
++	options: RenderErrorOptions,
++): Promise<Response> {
++	const response = await renderDefaultErrorResponse(manifest, request, options);
++	// Lets a coding agent debugging the site see what failed without exposing
++	// the error name to real visitors.
++	if (options.status === 500 && options.error instanceof Error && isRunByAgent()) {
++		response.headers.set(ASTRO_ERROR_HEADER, options.error.name);
++	}
++	return response;
++}
++
++async function renderDefaultErrorResponse(
+ 	manifest: SSRManifest,
+ 	request: Request,
+ 	{
+@@ -125,7 +141,7 @@ export async function renderDefaultError(
+ 			if (
+ 				rewroteToEmptyErrorResponse(skipMiddleware, errorRouteData, errorState.routeData, response)
+ 			) {
+-				return renderDefaultError(manifest, request, {
++				return renderDefaultErrorResponse(manifest, request, {
+ 					...resolvedRenderOptions,
+ 					status,
+ 					error,
+@@ -140,7 +156,7 @@ export async function renderDefaultError(
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+ 			if (skipMiddleware === false) {
+-				return renderDefaultError(manifest, request, {
++				return renderDefaultErrorResponse(manifest, request, {
+ 					...resolvedRenderOptions,
+ 					status,
+ 					error,

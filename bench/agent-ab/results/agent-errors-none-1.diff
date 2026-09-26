@@ -1,0 +1,68 @@
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..af29a15 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,9 +1,11 @@
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
+ import type { RenderErrorOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
++import { isRunByAgent } from '../../cli/agent.js';
+ import { getEnvironment } from '../environment/index.js';
+ import { FetchState } from '../fetch/fetch-state.js';
+ import { prepareResponse } from '../app/prepare-response.js';
++import { ASTRO_ERROR_HEADER } from '../constants.js';
+ import { attachCookiesToResponse } from '../cookies/index.js';
+ import { getCookiesFromResponse } from '../cookies/response.js';
+ import { handleMiddleware } from '../middleware/astro-middleware.js';
+@@ -16,6 +18,20 @@ import { getErrorRoutePath } from '../../i18n/error-routes.js';
+ import { getOutputFilename } from '../output-filename.js';
+ import { rewroteToEmptyErrorResponse } from './handler.js';
+ 
++/**
++ * Adds a header naming the thrown error to 500 responses, but only when a
++ * coding agent is running the process, so it can see what failed without
++ * scraping the rendered error page.
++ */
++function setAgentDebugHeader(response: Response, status: 404 | 500, error: unknown): void {
++	if (status !== 500 || !isRunByAgent()) return;
++	try {
++		response.headers.set(ASTRO_ERROR_HEADER, error instanceof Error ? error.name : 'Error');
++	} catch {
++		// Headers may be immutable (e.g. a Response produced by a network fetch).
++	}
++}
++
+ type ErrorPagePath =
+ 	| `${string}/404`
+ 	| `${string}/500`
+@@ -90,12 +106,14 @@ export async function renderDefaultError(
+ 					const override = { status, removeContentEncodingHeaders: true };
+ 
+ 					const newResponse = mergeResponses(response, originalResponse, override);
++					setAgentDebugHeader(newResponse, status, error);
+ 					prepareResponse(newResponse, resolvedRenderOptions);
+ 					return newResponse;
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+ 					const response = mergeResponses(new Response(null, { status }), originalResponse);
++					setAgentDebugHeader(response, status, error);
+ 					prepareResponse(response, resolvedRenderOptions);
+ 					return response;
+ 				}
+@@ -135,6 +153,7 @@ export async function renderDefaultError(
+ 				});
+ 			}
+ 			const newResponse = mergeResponses(response, originalResponse);
++			setAgentDebugHeader(newResponse, status, error);
+ 			prepareResponse(newResponse, resolvedRenderOptions);
+ 			return newResponse;
+ 		} catch {
+@@ -155,6 +174,7 @@ export async function renderDefaultError(
+ 	}
+ 
+ 	const response = mergeResponses(new Response(null, { status }), originalResponse);
++	setAgentDebugHeader(response, status, error);
+ 	prepareResponse(response, resolvedRenderOptions);
+ 	return response;
+ }

@@ -1,0 +1,91 @@
+diff --git a/packages/astro/src/cli/agent.ts b/packages/astro/src/cli/agent.ts
+index 4333f3b..a9d47f6 100644
+--- a/packages/astro/src/cli/agent.ts
++++ b/packages/astro/src/cli/agent.ts
+@@ -1,13 +1,4 @@
+-import { detectAgenticEnvironment } from 'am-i-vibing';
+-
+-export function isRunByAgent(): boolean {
+-	try {
+-		// "hybrid" environments such as Warp may not actually be running an AI agent.
+-		return detectAgenticEnvironment().type === 'agent';
+-	} catch {
+-		return false;
+-	}
+-}
++export { isRunByAgent } from '../core/is-agent.js';
+ 
+ export function supportsAgentAutoBackgrounding(platform: NodeJS.Platform): boolean {
+ 	// Detached children remain in agent-owned Windows Job Objects and are terminated with them.
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..b2a0d91 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -14,6 +14,7 @@ import { provideSession } from '../session/provider.js';
+ import { validateHost } from '../app/validate-headers.js';
+ import { getErrorRoutePath } from '../../i18n/error-routes.js';
+ import { getOutputFilename } from '../output-filename.js';
++import { isRunByAgent } from '../is-agent.js';
+ import { rewroteToEmptyErrorResponse } from './handler.js';
+ 
+ type ErrorPagePath =
+@@ -26,6 +27,16 @@ type ErrorPagePath =
+ 	| `${string}404.html`
+ 	| `${string}500.html`;
+ 
++/**
++ * Exposes the crashing error's name on 500 responses when the process is run
++ * by an AI coding agent, so it can see what failed without parsing logs.
++ */
++function setAgentErrorHeader(response: Response, status: 404 | 500, error: unknown): void {
++	if (status === 500 && error instanceof Error && isRunByAgent()) {
++		response.headers.set('X-Astro-Error', error.name);
++	}
++}
++
+ /**
+  * The default error strategy used in production SSR. Attempts to render the
+  * matching error route (404.astro / 500.astro), falling back to a plain
+@@ -91,12 +102,14 @@ export async function renderDefaultError(
+ 
+ 					const newResponse = mergeResponses(response, originalResponse, override);
+ 					prepareResponse(newResponse, resolvedRenderOptions);
++					setAgentErrorHeader(newResponse, status, error);
+ 					return newResponse;
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+ 					const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 					prepareResponse(response, resolvedRenderOptions);
++					setAgentErrorHeader(response, status, error);
+ 					return response;
+ 				}
+ 			}
+@@ -136,6 +149,7 @@ export async function renderDefaultError(
+ 			}
+ 			const newResponse = mergeResponses(response, originalResponse);
+ 			prepareResponse(newResponse, resolvedRenderOptions);
++			setAgentErrorHeader(newResponse, status, error);
+ 			return newResponse;
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+@@ -156,6 +170,7 @@ export async function renderDefaultError(
+ 
+ 	const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 	prepareResponse(response, resolvedRenderOptions);
++	setAgentErrorHeader(response, status, error);
+ 	return response;
+ }
+ 
+
++++ new file packages/astro/src/core/is-agent.ts
+import { detectAgenticEnvironment } from 'am-i-vibing';
+
+export function isRunByAgent(): boolean {
+	try {
+		// "hybrid" environments such as Warp may not actually be running an AI agent.
+		return detectAgenticEnvironment().type === 'agent';
+	} catch {
+		return false;
+	}
+}

@@ -1,0 +1,60 @@
+diff --git a/packages/astro/src/core/errors/default-handler.ts b/packages/astro/src/core/errors/default-handler.ts
+index f33eba1..725d0e5 100644
+--- a/packages/astro/src/core/errors/default-handler.ts
++++ b/packages/astro/src/core/errors/default-handler.ts
+@@ -1,3 +1,4 @@
++import { detectAgenticEnvironment } from 'am-i-vibing';
+ import { removeTrailingForwardSlash } from '@astrojs/internal-helpers/path';
+ import type { RenderErrorOptions } from '../app/base.js';
+ import type { SSRManifest } from '../app/types.js';
+@@ -16,6 +17,19 @@ import { getErrorRoutePath } from '../../i18n/error-routes.js';
+ import { getOutputFilename } from '../output-filename.js';
+ import { rewroteToEmptyErrorResponse } from './handler.js';
+ 
++const isAgenticEnvironment = detectAgenticEnvironment().isAgentic;
++
++/**
++ * Sets the `X-Astro-Error` header to the error's name when a 500 response is
++ * rendered under a coding agent, so the agent can see what failed without
++ * parsing the rendered error page.
++ */
++function setAgentErrorHeader(response: Response, status: 404 | 500, error: unknown): void {
++	if (status === 500 && isAgenticEnvironment && error instanceof Error) {
++		response.headers.set('X-Astro-Error', error.name);
++	}
++}
++
+ type ErrorPagePath =
+ 	| `${string}/404`
+ 	| `${string}/500`
+@@ -91,12 +105,14 @@ export async function renderDefaultError(
+ 
+ 					const newResponse = mergeResponses(response, originalResponse, override);
+ 					prepareResponse(newResponse, resolvedRenderOptions);
++					setAgentErrorHeader(newResponse, status, error);
+ 					return newResponse;
+ 				} catch {
+ 					// If the error page fetch fails (e.g. connection refused), fall
+ 					// through to the plain error response below.
+ 					const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 					prepareResponse(response, resolvedRenderOptions);
++					setAgentErrorHeader(response, status, error);
+ 					return response;
+ 				}
+ 			}
+@@ -136,6 +152,7 @@ export async function renderDefaultError(
+ 			}
+ 			const newResponse = mergeResponses(response, originalResponse);
+ 			prepareResponse(newResponse, resolvedRenderOptions);
++			setAgentErrorHeader(newResponse, status, error);
+ 			return newResponse;
+ 		} catch {
+ 			// Middleware may be the cause of the error, so we try rendering 404/500.astro without it.
+@@ -156,6 +173,7 @@ export async function renderDefaultError(
+ 
+ 	const response = mergeResponses(new Response(null, { status }), originalResponse);
+ 	prepareResponse(response, resolvedRenderOptions);
++	setAgentErrorHeader(response, status, error);
+ 	return response;
+ }
+ 

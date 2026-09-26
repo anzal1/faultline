@@ -1,0 +1,51 @@
+{
+  "id": "slow-render-faultline-1",
+  "task": "slow-render",
+  "arm": "faultline",
+  "i": 1,
+  "exit": 0,
+  "wallMs": 252208,
+  "reads": 14,
+  "searches": 26,
+  "edits": 6,
+  "faultlineCalls": [
+    "map",
+    "place",
+    "place",
+    "place",
+    "place",
+    "place",
+    "check"
+  ],
+  "hookWarnings": 0,
+  "turns": 55,
+  "cost": 0.8945118,
+  "usage": {
+    "input_tokens": 96,
+    "cache_creation_input_tokens": 55363,
+    "cache_read_input_tokens": 2436689,
+    "output_tokens": 18553,
+    "output_tokens_details": {
+      "thinking_tokens": 8916
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 55363,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 246793,
+  "result": "Good — all imports of `getTimeStat` from `./util.js` continue to work unchanged. The change is complete and minimal: a shared `getTimeStat` helper now lives in `packages/astro/src/core/time.ts`, `core/build/util.ts` re-exports it for existing callers, and `runtime/server/render/page.ts` times each `renderPage` call and logs `logger.warn('router', ...)` with the route and duration (formatted via th",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 4,
+  "done": true,
+  "diffLines": 95
+}

@@ -1,0 +1,44 @@
+{
+  "id": "agent-errors@2-none-3",
+  "task": "agent-errors@2",
+  "round": "2",
+  "arm": "none",
+  "i": 3,
+  "exit": 0,
+  "wallMs": 153564,
+  "reads": 11,
+  "searches": 16,
+  "edits": 6,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 34,
+  "cost": 0.4778564,
+  "usage": {
+    "input_tokens": 66,
+    "cache_creation_input_tokens": 32183,
+    "cache_read_input_tokens": 1154462,
+    "output_tokens": 11810,
+    "output_tokens_details": {
+      "thinking_tokens": 4453
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 32183,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 148645,
+  "result": "This is exactly the intended shape. The change is complete and minimal:\n\n- `packages/astro/src/core/errors/default-handler.ts`: wraps the production 500/404 error renderer so that on a 500 response, when `error` is an `Error` and the process is running under a coding agent (detected once via `am-i-vibing`'s `detectAgenticEnvironment()`, same detection Astro's CLI already uses), it sets `X-Astro-Er",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 2,
+  "done": true,
+  "diffLines": 77
+}

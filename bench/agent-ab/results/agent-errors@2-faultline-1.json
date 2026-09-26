@@ -1,0 +1,50 @@
+{
+  "id": "agent-errors@2-faultline-1",
+  "task": "agent-errors@2",
+  "round": "2",
+  "arm": "faultline",
+  "i": 1,
+  "exit": 0,
+  "wallMs": 165977,
+  "reads": 15,
+  "searches": 8,
+  "edits": 6,
+  "faultlineCalls": [
+    "map",
+    "place",
+    "map",
+    "check",
+    "plan"
+  ],
+  "hookWarnings": 0,
+  "turns": 36,
+  "cost": 0.5909009999999999,
+  "usage": {
+    "input_tokens": 64,
+    "cache_creation_input_tokens": 45473,
+    "cache_read_input_tokens": 1444655,
+    "output_tokens": 11995,
+    "output_tokens_details": {
+      "thinking_tokens": 5335
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 45473,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 159992,
+  "result": "The change is complete and small: `isRunByAgent` detection now lives in `packages/astro/src/core/agent.ts` (core-shared, importable by `app`), re-exported from `cli/agent.ts` so existing CLI usages are unaffected, and `packages/astro/src/core/errors/default-handler.ts` (the production 500/404 error strategy) now sets `X-Astro-Error` to the error's name on 500 responses when `isRunByAgent()` is tru",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 3,
+  "done": false,
+  "diffLines": 97
+}

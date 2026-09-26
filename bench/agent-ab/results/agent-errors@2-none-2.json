@@ -1,0 +1,44 @@
+{
+  "id": "agent-errors@2-none-2",
+  "task": "agent-errors@2",
+  "round": "2",
+  "arm": "none",
+  "i": 2,
+  "exit": 0,
+  "wallMs": 122243,
+  "reads": 6,
+  "searches": 17,
+  "edits": 4,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 28,
+  "cost": 0.4035708,
+  "usage": {
+    "input_tokens": 56,
+    "cache_creation_input_tokens": 28651,
+    "cache_read_input_tokens": 967524,
+    "output_tokens": 9535,
+    "output_tokens_details": {
+      "thinking_tokens": 3080
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 28651,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 117333,
+  "result": "Change made. `renderDefaultError` (the production error strategy in `packages/astro/src/core/errors/default-handler.ts`) now wraps the render and, for 500 responses with an error and when `am-i-vibing`'s `detectAgenticEnvironment()` reports an agentic environment (the same detection Astro's CLI already uses), sets `X-Astro-Error` to the error's name.",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": true,
+  "diffLines": 50
+}

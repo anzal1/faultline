@@ -1,0 +1,44 @@
+{
+  "id": "agent-errors@2-docs-1",
+  "task": "agent-errors@2",
+  "round": "2",
+  "arm": "docs",
+  "i": 1,
+  "exit": 0,
+  "wallMs": 144495,
+  "reads": 10,
+  "searches": 13,
+  "edits": 3,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 27,
+  "cost": 0.47000239999999993,
+  "usage": {
+    "input_tokens": 54,
+    "cache_creation_input_tokens": 37799,
+    "cache_read_input_tokens": 1079892,
+    "output_tokens": 10272,
+    "output_tokens_details": {
+      "thinking_tokens": 5756
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 37799,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 139669,
+  "result": "This is a small, self-contained change in `packages/astro/src/core/app/base.ts`: `BaseApp.renderError` now sets the `X-Astro-Error` header to the error's `name` on 500 responses in production, but only when `am-i-vibing`'s `detectAgenticEnvironment()` (the same detection Astro's CLI already uses) reports an agentic environment.",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 1,
+  "done": false,
+  "diffLines": 33
+}

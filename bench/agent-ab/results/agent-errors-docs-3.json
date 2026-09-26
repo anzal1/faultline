@@ -1,0 +1,43 @@
+{
+  "id": "agent-errors-docs-3",
+  "task": "agent-errors",
+  "arm": "docs",
+  "i": 3,
+  "exit": 0,
+  "wallMs": 102845,
+  "reads": 5,
+  "searches": 14,
+  "edits": 4,
+  "faultlineCalls": [],
+  "hookWarnings": 0,
+  "turns": 24,
+  "cost": 0.3344541999999999,
+  "usage": {
+    "input_tokens": 48,
+    "cache_creation_input_tokens": 24861,
+    "cache_read_input_tokens": 786171,
+    "output_tokens": 7768,
+    "output_tokens_details": {
+      "thinking_tokens": 3097
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 24861,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "not_available",
+    "iterations": [],
+    "speed": "standard"
+  },
+  "durationMs": 97703,
+  "result": "All four production-error response sites in `renderDefaultError` now pass `status`/`error` through, and `prepareResponse` sets `X-Astro-Error: <error.name>` on 500 responses when `am-i-vibing`'s `detectAgenticEnvironment().isAgentic` is true — reusing the CLI's existing agent detection.",
+  "violations": [],
+  "newEdges": [],
+  "filesChanged": 2,
+  "done": true,
+  "diffLines": 77
+}
