@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { configPath, serializeConfig, systemName } from "./config.js";
+import { configPath, DEFAULT_IGNORE, serializeConfig, systemName } from "./config.js";
 import { findRoot, Workspace } from "./context.js";
 import { findings } from "./describe.js";
 import { aggregate } from "./graph.js";
 import picomatch from "picomatch";
-import { collectProposeInput, defaultConfig, outline, proposeHeuristic, proposeWithClaude, skipGlobs } from "./propose.js";
+import { collectProposeInput, draftConfig, outline, proposeWithClaude } from "./propose.js";
 import { renderMarkdown } from "./render/markdown.js";
 import { bold, dim, green, red, renderText, yellow } from "./render/text.js";
 import { agentDiff, overview, place, withCost } from "./agent.js";
@@ -68,15 +68,16 @@ async function cmdInit(args: Args) {
     console.error(`faultline.yml already exists at ${file}. Use --force to regenerate it.`);
     process.exit(1);
   }
-  const all = await collectProposeInput(makeSource(root, undefined));
-  const extraIgnore = args.flags["keep-all"] ? [] : skipGlobs(all.files);
-  const skip = picomatch(extraIgnore);
-  const input = { ...all, files: all.files.filter((f) => !skip(f)) };
-  if (input.files.length === 0) {
-    console.error("No JavaScript or TypeScript source files found.");
+  process.stderr.write(dim("Reading the code and its imports…\n"));
+  const draft = await draftConfig(root, { target: args.flags.target ? Number(args.flags.target) : undefined, keepAll: !!args.flags["keep-all"] });
+  if (draft.stats.files === 0) {
+    console.error("No source files found in any supported language.");
     process.exit(1);
   }
-  let systems = proposeHeuristic(input, args.flags.target ? Number(args.flags.target) : undefined);
+  const all = await collectProposeInput(makeSource(root, undefined));
+  const skip = picomatch(draft.config.ignore);
+  const input = { ...all, files: all.files.filter((f) => !skip(f)) };
+  let systems = draft.config.systems;
   if (args.flags.outline) {
     // Provider-neutral naming: hand the outline and the draft to whichever agent you already use.
     console.log("Name these systems well and write faultline.yml. Group directories into 8 to 16 systems, one responsibility each, using the team's own words.\n");
@@ -96,7 +97,7 @@ async function cmdInit(args: Args) {
       process.stderr.write(yellow(`Claude proposal failed (${(e as Error).message}); keeping the structural draft.\n`));
     }
   }
-  const config = defaultConfig(systems, extraIgnore);
+  const config = { ...draft.config, systems };
   fs.writeFileSync(file, serializeConfig(config));
   const ws = new Workspace(root, config);
   const model = await ws.model(undefined);
@@ -106,6 +107,7 @@ async function cmdInit(args: Args) {
   for (const s of systems) console.log(`  ${bold(s.name.padEnd(34))} ${dim(String(counts.get(s.id) ?? 0).padStart(5) + " files")}  ${dim(s.paths.join(", "))}`);
   const unmapped = counts.get("unmapped") ?? 0;
   if (unmapped) console.log(`  ${yellow("Unmapped".padEnd(34))} ${dim(String(unmapped).padStart(5) + " files")}`);
+  const extraIgnore = draft.config.ignore.filter((g) => !DEFAULT_IGNORE.includes(g));
   if (extraIgnore.length) console.log(dim(`\n  Left out as non-product code: ${extraIgnore.join(", ")} (see ignore: in faultline.yml)`));
   console.log(`\nEdit names and paths until the boxes match how your team talks about the code, then run ${bold("fault map")}.`);
   console.log(dim("Add rules to turn edges into fault lines, e.g.  rules: [{ deny: \"ui -> db\", reason: \"UI goes through the API\" }]"));

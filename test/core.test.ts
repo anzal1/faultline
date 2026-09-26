@@ -8,7 +8,7 @@ import { Workspace } from "../src/context.js";
 import { findings, headline } from "../src/describe.js";
 import { aggregate, cycles } from "../src/graph.js";
 import { parseFile } from "../src/parse.js";
-import { proposeHeuristic } from "../src/propose.js";
+import { proposeHeuristic, simplifyGlobs } from "../src/propose.js";
 import { renderMarkdown } from "../src/render/markdown.js";
 import { Resolver } from "../src/resolve.js";
 import { buildState } from "../src/state.js";
@@ -223,12 +223,37 @@ describe("proposal", () => {
     files.push("packages/app/src/tiny/one.ts");
     const systems = proposeHeuristic({ files, packageNames: new Map([["packages/cli", "@acme/cli"]]) }, 6);
     const byName = Object.fromEntries(systems.map((s) => [s.name, s.paths]));
-    expect(byName["Core"]).toEqual(["packages/app/src/core/**"]);
+    expect(Object.keys(byName).sort()).toEqual(["CLI", "Core", "Runtime", "Vite plugins"]);
+    expect(byName["Core"]).toContain("packages/app/src/core/**");
     expect(byName["Vite plugins"]).toEqual(["packages/app/src/vite-plugin-*/**"]);
-    expect(byName["@acme/cli"]).toEqual(["packages/cli/src/**"]);
+    // A package whose name only repeats its folder reads as the folder.
+    expect(byName["CLI"]).toEqual(["packages/cli/**"]);
+    expect(systems.some((s) => /misc/i.test(s.name))).toBe(false);
     const cfg = parseConfig(`systems: ${JSON.stringify(systems)}`);
     const a = new Assigner(cfg);
     expect(files.filter((f) => a.assign(f).system === "unmapped")).toEqual([]);
+  });
+});
+
+describe("glob simplification", () => {
+  it("collapses to a parent folder only when every file keeps its system and the box owns most of it", () => {
+    const files = [
+      ...["a", "b", "c", "d"].map((d) => `src/core/${d}/x.ts`),
+      "src/core/build/y.ts",
+      "src/core/build/z.ts",
+      "src/web/w.ts",
+      "src/api/q.ts",
+    ];
+    const systems = [
+      { id: "core", name: "Core", paths: ["src/core/a/**", "src/core/b/**", "src/core/c/**", "src/core/d/**"] },
+      { id: "build", name: "Build", paths: ["src/core/build/**"] },
+      { id: "web", name: "Web", paths: ["src/web/**", "src/api/**", "src/other/**"] },
+    ];
+    const out = simplifyGlobs(systems, files, Assigner);
+    expect(out[0].paths).toEqual(["src/core/**"]);
+    expect(out[1].paths).toEqual(["src/core/build/**"]);
+    // Web owns only 2 of the 8 files under src/, so it may not claim src/**.
+    expect(out[2].paths).toEqual(["src/api/**", "src/other/**", "src/web/**"]);
   });
 });
 
