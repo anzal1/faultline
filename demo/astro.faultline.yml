@@ -1,0 +1,116 @@
+# faultline.yml: the declared architecture of this repo.
+# Systems are the boxes on the map. Each file belongs to the most specific system whose paths match it.
+# Rules turn an edge into a fault line: `deny: web -> db` fails `fault check` when that import appears.
+version: 1
+systems:
+  - id: cli
+    name: CLI
+    description: The astro command (dev, build, add, check, sync) and its argument handling.
+    paths: [packages/astro/src/cli/**]
+  - id: dev-server
+    name: Dev server
+    description: The Vite-powered dev server, its request middleware, and astro preview.
+    paths: [packages/astro/src/core/dev/**, packages/astro/src/vite-plugin-astro-server/**, packages/astro/src/core/preview/**]
+  - id: build
+    name: Build pipeline
+    description: Static generation and server bundles, including prerendering.
+    paths: [packages/astro/src/core/build/**, packages/astro/src/prerender/**]
+  - id: routing
+    name: Routing
+    description: The route manifest, matching, redirects, rewrites and i18n routing.
+    paths: [packages/astro/src/core/routing/**, packages/astro/src/core/redirects/**, packages/astro/src/core/rewrites/**, packages/astro/src/core/pages/**, packages/astro/src/core/i18n/**, packages/astro/src/i18n/**]
+  - id: app
+    name: Request handling
+    description: The production App, middleware, sessions, cookies and caching, the code that runs on every request.
+    paths: [packages/astro/src/core/app/**, packages/astro/src/core/middleware/**, packages/astro/src/core/session/**, packages/astro/src/core/cookies/**, packages/astro/src/core/cache/**, packages/astro/src/core/fetch/**, packages/astro/src/core/hono/**]
+  - id: render
+    name: Render pipeline
+    description: Turns a matched route into HTML, including head propagation, server islands and CSP.
+    paths: [packages/astro/src/core/render/**, packages/astro/src/core/render-scope/**, packages/astro/src/core/head-propagation/**, packages/astro/src/core/server-islands/**, packages/astro/src/core/csp/**]
+  - id: runtime
+    name: Runtime
+    description: Server rendering runtime and client hydration code that ships with every site.
+    paths: [packages/astro/src/runtime/**]
+  - id: client
+    name: Client features
+    description: View transitions, prefetch and the dev toolbar.
+    paths: [packages/astro/src/transitions/**, packages/astro/src/prefetch/**, packages/astro/src/toolbar/**]
+  - id: vite-plugins
+    name: Vite plugins
+    description: The Vite plugins that compile .astro files, pages, CSS, scripts and virtual modules.
+    paths: [packages/astro/src/vite-plugin-*/**]
+  - id: content
+    name: Content collections
+    description: Content layer, loaders and astro:content.
+    paths: [packages/astro/src/content/**]
+  - id: assets
+    name: Assets
+    description: Images, fonts and asset optimisation.
+    paths: [packages/astro/src/assets/**]
+  - id: actions
+    name: Actions
+    description: Type-safe server actions.
+    paths: [packages/astro/src/actions/**]
+  - id: config
+    name: Config & env
+    description: astro.config loading and validation, astro:env, preferences and integration hooks.
+    paths: [packages/astro/src/core/config/**, packages/astro/src/config/**, packages/astro/src/env/**, packages/astro/src/preferences/**, packages/astro/src/integrations/**]
+  - id: core-shared
+    name: Core utilities
+    description: Errors, logger, compiler bridge and other shared internals.
+    paths: [packages/astro/src/core/**]
+  - id: astro-api
+    name: Public API & types
+    description: The astro package surface, public types, virtual modules and entrypoints.
+    paths: [packages/astro/**]
+  - id: adapters
+    name: Deploy adapters
+    description: Cloudflare, Vercel, Netlify and Node adapters.
+    paths: [packages/integrations/cloudflare/**, packages/integrations/vercel/**, packages/integrations/netlify/**, packages/integrations/node/**]
+  - id: frameworks
+    name: UI framework integrations
+    description: React, Preact, Vue, Svelte, Solid and Alpine renderers.
+    paths: [packages/integrations/react/**, packages/integrations/preact/**, packages/integrations/vue/**, packages/integrations/svelte/**, packages/integrations/solid/**, packages/integrations/alpinejs/**]
+  - id: integrations
+    name: Other integrations
+    description: MDX, Markdoc, sitemap and Partytown.
+    paths: [packages/integrations/**]
+  - id: markdown
+    name: Markdown
+    description: The remark and rehype pipeline behind .md support.
+    paths: [packages/markdown/**]
+  - id: language-tools
+    name: Language tools
+    description: Language server, VS Code extension and astro check.
+    paths: [packages/language-tools/**]
+  - id: scaffolding
+    name: Scaffolding
+    description: create-astro and @astrojs/upgrade.
+    paths: [packages/create-astro/**, packages/upgrade/**]
+  - id: shared
+    name: Shared packages
+    description: internal-helpers, telemetry, prism, rss and redirects.
+    paths: [packages/internal-helpers/**, packages/telemetry/**, packages/underscore-redirects/**, packages/astro-prism/**, packages/astro-rss/**]
+rules:
+  - deny: "{app,render,runtime,client} -> {cli,dev-server,vite-plugins}"
+    reason: Code that runs in production must not pull in dev tooling
+  - deny: runtime -> build
+    reason: The runtime ships with every site; the build pipeline must stay out of it
+ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/.astro/**"
+  - "**/*.d.ts"
+  - "**/test/**"
+  - "**/tests/**"
+  - "**/__tests__/**"
+  - "**/fixtures/**"
+  - "**/*.test.*"
+  - "**/*.spec.*"
+  - "**/e2e/**"
+  - ".agents/**"
+  - ".github/**"
+  - benchmark/**
+  - examples/**
+  - scripts/**
+  - "*"

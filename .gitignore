@@ -2,3 +2,4 @@ node_modules
 dist
 .faultline/cache
 *.log
+demo/*.mp4
