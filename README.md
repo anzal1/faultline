@@ -116,6 +116,10 @@ On Astro (967 source files, 22 systems), from `node bench/tokens.mjs`:
 | Where one new file goes and what it may import | 70 to 150 | |
 | What my edits did to the structure | 5 to 200 | |
 
+### Does it change what agents ship?
+
+A pilot on the Astro monorepo: 36 headless Claude Code runs on tasks built to tempt one forbidden import. Where a rule covered the tempting import, agents crossed it **3 of 6** times with no guidance, **5 of 6** times with the rule written in AGENTS.md, and **0 of 6** times with faultline, at 46 to 62% higher average cost per run (the correct fix is a refactor). One repo, one model, tasks written by the builder: read it as a pilot. Method, every diff and the caveats are in [`bench/agent-ab`](bench/agent-ab).
+
 ## The map
 
 `fault map` serves a local page that watches the repo and redraws as files change:
