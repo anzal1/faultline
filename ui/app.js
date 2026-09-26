@@ -749,7 +749,10 @@
     }
   }
   function setSnap(i) {
-    ui.snap = Math.max(0, Math.min(S.snapshots.length - 1, i));
+    const next = Math.max(0, Math.min(S.snapshots.length - 1, i));
+    // A selection belongs to one point in time; moving on shows that step's own findings.
+    if (next !== ui.snap) ui.sel = null;
+    ui.snap = next;
     ui.followLive = ui.snap === S.snapshots.length - 1;
     render();
   }
