@@ -1,0 +1,53 @@
+{
+  "name": "@anzal1/faultline",
+  "version": "0.1.0",
+  "description": "A living architecture map for your codebase. See what every change, human or agent, does to the structure.",
+  "type": "module",
+  "bin": {
+    "fault": "dist/cli.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "ui",
+    "action.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
+    "dev": "tsc -p tsconfig.json --watch",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "keywords": [
+    "architecture",
+    "diagram",
+    "code review",
+    "dependency graph",
+    "ai agents",
+    "claude code"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.128.0",
+    "elkjs": "^0.12.0",
+    "oxc-parser": "^0.151.0",
+    "picomatch": "^4.0.7",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "@types/picomatch": "^4.0.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.2"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anzal1/faultline"
+  }
+}
