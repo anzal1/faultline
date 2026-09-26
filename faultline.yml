@@ -1,0 +1,39 @@
+# faultline's own architecture. CI runs `fault check` against it on every push.
+version: 1
+systems:
+  - id: cli
+    name: CLI
+    description: Argument parsing and the fault commands.
+    paths: [src/cli.ts]
+  - id: engine
+    name: Engine
+    description: Snapshots, parsing, resolution, the graph, diffs, rules and plans.
+    paths: [src/config.ts, src/source.ts, src/parse.ts, src/resolve.ts, src/graph.ts, src/diff.ts, src/rules.ts, src/types.ts, src/context.ts, src/plan.ts]
+  - id: lang
+    name: Language adapters
+    description: Per-language lexers, extractors and resolvers.
+    paths: [src/lang/**]
+  - id: proposer
+    name: System proposer
+    description: Drafts faultline.yml from a directory tree.
+    paths: [src/propose.ts]
+  - id: reports
+    name: Reports
+    description: Findings in plain English, PR comments, map state, layout and exports.
+    paths: [src/describe.ts, src/render/**, src/state.ts, src/layout.ts, src/export.ts]
+  - id: agents
+    name: Agent integrations
+    description: Compact answers, the MCP server, hooks and fault setup.
+    paths: [src/agent.ts, src/mcp.ts, src/hook.ts, src/setup.ts]
+  - id: map
+    name: Live map
+    description: The local server and the browser UI.
+    paths: [src/server.ts, ui/**]
+rules:
+  - deny: "{engine,lang} -> {cli,agents,map,reports,proposer}"
+    reason: The engine stays a library; everything else is built on top of it
+ignore:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "test/**"
+  - "bench/**"

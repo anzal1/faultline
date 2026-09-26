@@ -1,0 +1,56 @@
+name: Release
+# Publishes to npm whenever main carries a version that is not on npm yet.
+# Ship a release with:  npm version patch && git push --follow-tags
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write # tag and GitHub release
+  id-token: write # npm trusted publishing (OIDC): no npm token is stored anywhere
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - name: Is this version new?
+        id: version
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "$NAME@$VERSION is already on npm; nothing to release."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "Releasing $NAME@$VERSION"
+          fi
+      - if: steps.version.outputs.publish == 'true'
+        run: npm ci
+      - if: steps.version.outputs.publish == 'true'
+        run: npm run typecheck && npm run build && npm test
+      - name: Publish to npm
+        if: steps.version.outputs.publish == 'true'
+        run: npm publish --access public --provenance --ignore-scripts
+      - name: Tag and GitHub release
+        if: steps.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git tag -f "v$VERSION"
+          MAJOR="v${VERSION%%.*}"
+          git tag -f "$MAJOR"
+          git push -f origin "v$VERSION" "$MAJOR"
+          gh release create "v$VERSION" --title "v$VERSION" --generate-notes || gh release edit "v$VERSION" --title "v$VERSION"
