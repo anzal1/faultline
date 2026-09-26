@@ -253,7 +253,7 @@ describe("glob simplification", () => {
     expect(out[0].paths).toEqual(["src/core/**"]);
     expect(out[1].paths).toEqual(["src/core/build/**"]);
     // Web owns only 2 of the 8 files under src/, so it may not claim src/**.
-    expect(out[2].paths).toEqual(["src/api/**", "src/other/**", "src/web/**"]);
+    expect(out[2].paths).toEqual(["src/web/**", "src/api/**", "src/other/**"]);
   });
 });
 
