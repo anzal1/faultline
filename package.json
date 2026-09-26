@@ -1,6 +1,6 @@
 {
   "name": "@anzalabidi/faultline",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "A living architecture map for any codebase, any language, any coding agent. See what every change does to the structure, and stop it crossing the lines you drew.",
   "type": "module",
   "bin": {
