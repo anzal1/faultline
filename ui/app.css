@@ -179,7 +179,8 @@ button { font: inherit; color: inherit; }
 .n-chip-add { fill: var(--new); }
 .n-chip-mod { fill: var(--touch); }
 .n-chip-del { fill: var(--fault); }
-.node { cursor: pointer; }
+.node { cursor: pointer; user-select: none; -webkit-user-select: none; }
+.fl-map svg text { user-select: none; -webkit-user-select: none; }
 .node:hover .n-box { stroke: var(--ink-2); }
 .node.is-touched .n-box { stroke: var(--touch); stroke-width: 2; }
 .node.is-selected .n-box { stroke: var(--accent); stroke-width: 2.5; }
@@ -201,6 +202,8 @@ button { font: inherit; color: inherit; }
 .edge.is-hot { opacity: 0.95; stroke: var(--ink-2); }
 .edge.is-planned { stroke: var(--accent); opacity: 0.9; stroke-dasharray: 2 6; }
 .edge.is-selected { stroke: var(--accent); opacity: 1; }
+.edge.is-selected.is-new, .edge.is-selected.is-grown { stroke: var(--new); }
+.edge.is-selected.is-fault, .edge.is-selected.is-fault-old, .edge.is-selected.is-gone { stroke: var(--fault); }
 .edge.is-faded { opacity: 0.08; }
 .edge.is-new.is-faded, .edge.is-fault.is-faded, .edge.is-gone.is-faded { opacity: 0.3; }
 .edge.is-new, .edge.is-fault { animation: fl-flow 1.4s linear infinite; stroke-dasharray: 10 4; }

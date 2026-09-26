@@ -399,6 +399,7 @@
   }
 
   let scene = null;
+  let lastClick = { id: "", t: 0 };
   function renderMap() {
     scene = ui.view.kind === "system" ? buildDrillScene(ui.view.id) : buildSystemScene();
     const routed = routeAll(scene.nodes, scene.edges);
@@ -410,9 +411,9 @@
     const layerNodes = s("g");
     const maxCount = Math.max(1, ...routed.map((e) => e.count));
     for (const e of routed) {
-      const w = e.state === "new" || e.state === "fault" || e.state === "planned" ? 2.6 : 1 + Math.min(3.2, (Math.log2(e.count + 1) / Math.log2(maxCount + 1)) * 3.2);
+      const w = e.id === selEdge ? 3.6 : e.state === "new" || e.state === "fault" || e.state === "planned" ? 2.6 : 1 + Math.min(3.2, (Math.log2(e.count + 1) / Math.log2(maxCount + 1)) * 3.2);
       const cls = ["edge", e.typeOnly ? "is-type" : "", e.state ? "is-" + e.state : "", e.id === selEdge ? "is-selected" : "", anyChange && !e.state ? "is-faded" : ""].filter(Boolean).join(" ");
-      const marker = e.id === selEdge || e.state === "planned" ? "a-accent" : e.state === "new" ? "a-new" : e.state === "grown" ? "a-hot" : e.state === "fault" || e.state === "gone" || e.state === "fault-old" ? "a-fault" : "a-default";
+      const marker = (e.id === selEdge && !e.state) || e.state === "planned" ? "a-accent" : e.state === "new" ? "a-new" : e.state === "grown" ? "a-hot" : e.state === "fault" || e.state === "gone" || e.state === "fault-old" ? "a-fault" : "a-default";
       const path = s("path", { d: e.d, class: cls, "stroke-width": w, "marker-end": `url(#${marker})`, "data-id": e.id, "data-from": e.from, "data-to": e.to });
       layerEdges.append(path);
       const hit = s("path", { d: e.d, class: "edge-hit", "data-id": e.id });
@@ -425,7 +426,8 @@
       layerEdges.prepend(s("rect", { x: c.x, y: c.y, width: c.w, height: c.h, rx: 14, class: "container-box" }), s("text", { x: c.x + 18, y: c.y + 24, class: "container-title", text: c.title }));
     }
     for (const n of scene.nodes) layerNodes.append(nodeEl(n, selNode));
-    els.vp.replaceChildren(layerEdges, layerNodes, layerHits);
+    // Edge hit areas sit under the nodes: a box is always clickable even with edges passing over it.
+    els.vp.replaceChildren(layerEdges, layerHits, layerNodes);
     renderCrumbs();
     renderTools();
     const fitKey = (ui.view.kind === "system" ? "sys:" + ui.view.id : "map") + "|" + scene.nodes.length;
@@ -468,10 +470,16 @@
     g.addEventListener("click", (ev) => {
       if (moved) return;
       ev.stopPropagation();
+      // A click re-renders the map, so a native dblclick never reaches the same element: time it instead.
+      const now = Date.now();
+      if (lastClick.id === n.id && now - lastClick.t < 400) {
+        lastClick = { id: "", t: 0 };
+        return open();
+      }
+      lastClick = { id: n.id, t: now };
       if (n.kind === "neighbour") return select({ type: "system", id: n.sysId, from: "neighbour" });
       select({ type: n.kind, id: n.id });
     });
-    g.addEventListener("dblclick", (ev) => { ev.stopPropagation(); open(); });
     g.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); open(); } else if (ev.key === " ") { ev.preventDefault(); g.dispatchEvent(new MouseEvent("click")); } });
     g.addEventListener("mouseenter", () => hover(n.id, true));
     g.addEventListener("mouseleave", () => hover(n.id, false));
@@ -873,7 +881,7 @@
       pointers.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
       moved = false;
       start = { t: { ...ui.transform }, pts: new Map(pointers) };
-      els.map.setPointerCapture?.(ev.pointerId);
+      // Capture only once a drag starts: capturing on press re-targets the click away from the node.
     });
     els.map.addEventListener("pointermove", (ev) => {
       if (!pointers.has(ev.pointerId) || !start) return;
@@ -882,7 +890,11 @@
       const spts = [...start.pts.values()];
       if (pts.length === 1 && spts.length >= 1) {
         const dx = pts[0].x - spts[0].x, dy = pts[0].y - spts[0].y;
-        if (Math.abs(dx) + Math.abs(dy) > 4) { moved = true; els.map.classList.add("is-panning"); }
+        if (Math.abs(dx) + Math.abs(dy) > 4 && !moved) {
+          moved = true;
+          els.map.classList.add("is-panning");
+          try { els.map.setPointerCapture(ev.pointerId); } catch { /* pointer already gone */ }
+        }
         if (moved) { ui.transform = { ...start.t, x: start.t.x + dx, y: start.t.y + dy }; applyTransform(); }
       } else if (pts.length >= 2 && spts.length >= 2) {
         moved = true;
