@@ -1,9 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseSync } from "oxc-parser";
+import { extractorFor } from "./lang/extract.js";
 import type { ParsedFile, ParsedImport } from "./types.js";
 
-const PARSER_VERSION = 2;
+const PARSER_VERSION = 3;
 
 /** Pulls the script parts out of component files so the JS parser can read them. */
 export function extractScript(file: string, code: string): { code: string; lang: string } {
@@ -24,6 +25,14 @@ export function extractScript(file: string, code: string): { code: string; lang:
 const REQUIRE_RE = /\brequire\s*\(\s*(['"])([^'"\n]+)\1\s*\)/g;
 
 export function parseFile(file: string, source: string): ParsedFile {
+  const other = extractorFor(file);
+  if (other) {
+    try {
+      return other.extract(file, source);
+    } catch {
+      return { imports: [], exports: [], lang: other.lang };
+    }
+  }
   const { code, lang } = extractScript(file, source);
   const fakeName = lang === ext(file) ? file : `${file}.${lang === "js" ? "js" : "ts"}`;
   const imports: ParsedImport[] = [];

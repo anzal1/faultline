@@ -13,6 +13,7 @@ export interface Source {
 }
 
 export const WORKTREE = "WORKTREE";
+export const INDEX = "INDEX";
 
 export function git(root: string, args: string[], input?: string): string {
   const r = spawnSync("git", args, { cwd: root, encoding: "utf8", input, maxBuffer: 1 << 30 });
@@ -169,8 +170,41 @@ function walk(root: string): string[] {
   return out;
 }
 
+/** What `git commit` would record right now: the staged content of every file. */
+export class IndexSource implements Source {
+  readonly ref = INDEX;
+  readonly label = "staged changes";
+  private listing?: Map<string, string>;
+  constructor(readonly root: string) {}
+
+  async list(): Promise<Map<string, string>> {
+    if (this.listing) return this.listing;
+    const files = new Map<string, string>();
+    for (const entry of git(this.root, ["ls-files", "-s", "-z"]).split("\0")) {
+      if (!entry) continue;
+      const tab = entry.indexOf("\t");
+      const [, sha] = entry.slice(0, tab).split(" ");
+      files.set(entry.slice(tab + 1), sha);
+    }
+    this.listing = files;
+    return files;
+  }
+
+  async read(paths: string[]): Promise<Map<string, string>> {
+    const listing = await this.list();
+    const bySha = await catFileBatch(this.root, paths.map((p) => listing.get(p)).filter((x): x is string => !!x));
+    const out = new Map<string, string>();
+    for (const p of paths) {
+      const c = bySha.get(listing.get(p) ?? "");
+      if (c !== undefined) out.set(p, c);
+    }
+    return out;
+  }
+}
+
 export function makeSource(root: string, ref: string | undefined): Source {
   if (!ref || ref === WORKTREE) return new WorktreeSource(root);
+  if (ref === INDEX) return new IndexSource(root);
   const sha = resolveRef(root, ref);
   return new GitRefSource(root, sha, ref === sha ? shortRef(root, sha) : `${ref} (${shortRef(root, sha)})`);
 }

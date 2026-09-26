@@ -7,30 +7,40 @@ inputs:
   fail-on-fault:
     description: Fail the job when the pull request crosses a fault line declared in faultline.yml.
     default: "true"
-  version:
-    description: Version of faultline to run.
-    default: latest
   comment:
     description: Post or update a sticky comment on the pull request.
     default: "true"
+  working-directory:
+    description: Directory that contains faultline.yml.
+    default: "."
   github-token:
     description: Token used to post the comment.
     default: ${{ github.token }}
 runs:
   using: composite
   steps:
+    - name: Set up faultline
+      shell: bash
+      run: |
+        set -euo pipefail
+        cd "$GITHUB_ACTION_PATH"
+        if [ ! -f dist/cli.js ]; then
+          npm ci --no-audit --no-fund --loglevel=error
+          npm run build --silent
+        fi
     - name: Structural diff
       id: diff
       shell: bash
+      working-directory: ${{ inputs.working-directory }}
       env:
-        BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        FL_VERSION: ${{ inputs.version }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       run: |
         set -euo pipefail
-        BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
-        npx -y "@anzal1/faultline@${FL_VERSION}" diff "$BASE" "$HEAD_SHA" --format markdown -o "$RUNNER_TEMP/faultline.md"
-        npx -y "@anzal1/faultline@${FL_VERSION}" diff "$BASE" "$HEAD_SHA" --format json -o "$RUNNER_TEMP/faultline.json"
+        FAULT="node $GITHUB_ACTION_PATH/dist/cli.js"
+        BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA" 2>/dev/null || echo "$BASE_SHA")
+        $FAULT diff "$BASE" "$HEAD_SHA" --format markdown -o "$RUNNER_TEMP/faultline.md"
+        $FAULT diff "$BASE" "$HEAD_SHA" --format json -o "$RUNNER_TEMP/faultline.json"
         FAULTS=$(node -e "const d=require(process.argv[1]); console.log(d.delta.violations.introduced.length)" "$RUNNER_TEMP/faultline.json")
         echo "faults=$FAULTS" >> "$GITHUB_OUTPUT"
         cat "$RUNNER_TEMP/faultline.md" >> "$GITHUB_STEP_SUMMARY"

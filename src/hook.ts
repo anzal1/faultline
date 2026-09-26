@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import type { Args } from "./cli.js";
 import { loadConfig, systemName } from "./config.js";
 import { findRoot, Workspace } from "./context.js";
+import { allowedRoute } from "./agent.js";
 import { findings, importPhrase } from "./describe.js";
+import { aggregate } from "./graph.js";
+import { compileRules } from "./rules.js";
 import { green, dim, bold } from "./render/text.js";
 import { readServerInfo } from "./server.js";
 import { git } from "./source.js";
@@ -12,10 +15,14 @@ import { git } from "./source.js";
 interface HookEvent {
   hook_event_name?: string;
   session_id?: string;
+  conversation_id?: string;
   cwd?: string;
+  workspace_roots?: string[];
   tool_name?: string;
   tool_input?: { file_path?: string };
 }
+
+type AgentKind = "claude" | "codex" | "copilot" | "cursor" | "generic";
 
 interface SessionState {
   base: string;
@@ -80,7 +87,7 @@ async function post(port: number, pathname: string, body: unknown): Promise<unkn
  * Claude Code hook. PostToolUse: if the edit crossed a fault line, tell the agent right away so it can
  * fix it in the same turn. Stop: freeze the turn on the live map and summarise what moved.
  */
-export async function cmdHook(_args: Args) {
+export async function cmdHook(args: Args) {
   const raw = await readStdin();
   let event: HookEvent = {};
   try {
@@ -88,51 +95,80 @@ export async function cmdHook(_args: Args) {
   } catch {
     return;
   }
-  const root = findRoot(event.cwd ?? process.cwd());
+  const agent = (String(args.flags.agent ?? "") || (event.workspace_roots ? "cursor" : "claude")) as AgentKind;
+  const root = findRoot(event.cwd ?? event.workspace_roots?.[0] ?? process.cwd());
   const config = loadConfig(root);
   if (!config) return; // repo not using faultline: stay silent
   const ws = new Workspace(root, config);
-  const sessionId = event.session_id ?? "default";
+  const sessionId = event.session_id ?? event.conversation_id ?? "default";
   const session = loadSession(root, sessionId);
   if (!session.base) return;
   const server = readServerInfo(root);
-  const name = event.hook_event_name ?? "";
+  const name = (event.hook_event_name ?? "").toLowerCase();
+  const isEdit = name === "posttooluse" || name === "afterfileedit" || name === "aftertool";
+  const isStop = name === "stop" || name === "subagentstop" || name === "afteragent";
 
-  if (name === "PostToolUse") {
-    const { delta } = await ws.diff(session.base, undefined);
+  const freshFaults = async () => {
+    const { delta, headModel } = await ws.diff(session.base, undefined);
     const fresh = delta.violations.introduced.filter((v) => !session.reported.includes(`${v.from}->${v.to}`));
+    return { delta, headModel, fresh };
+  };
+  const describeFaults = (fresh: Awaited<ReturnType<typeof freshFaults>>["fresh"], headModel: Parameters<typeof aggregate>[0]) => {
+    const n = (id: string) => systemName(config, id);
+    const edges = aggregate(headModel, "system");
+    const rules = compileRules(config);
+    const lines = fresh.map((v) => {
+      const e = v.evidence[0];
+      const route = allowedRoute(edges, rules, v.from, v.to);
+      return `- ${n(v.from)} → ${n(v.to)} is a declared fault line (deny ${v.rule}${v.reason ? `: ${v.reason}` : ""}). ${e ? `${e.from} ${importPhrase(e).replace(/^\S+ /, "")}.` : ""}${route ? ` Allowed route: ${route.join(" → ")}.` : ""}`;
+    });
+    return (
+      `faultline: this change crosses ${fresh.length === 1 ? "a fault line" : `${fresh.length} fault lines`} declared in faultline.yml:\n${lines.join("\n")}\n` +
+      `Route the dependency through an allowed system instead, or ask the user before changing the rule.`
+    );
+  };
+
+  if (isEdit) {
     if (server) void post(server.port, "/api/refresh", {});
+    // Cursor's afterFileEdit cannot talk back to the agent; the stop hook reports instead.
+    if (agent === "cursor") return;
+    const { headModel, fresh } = await freshFaults();
     if (fresh.length === 0) return saveSession(root, sessionId, session);
     session.reported.push(...fresh.map((v) => `${v.from}->${v.to}`));
     saveSession(root, sessionId, session);
-    const n = (id: string) => systemName(config, id);
-    const lines = fresh.map((v) => {
-      const e = v.evidence[0];
-      return `- ${n(v.from)} → ${n(v.to)} is a declared fault line (deny ${v.rule}${v.reason ? `: ${v.reason}` : ""}). ${e ? `${e.from} ${importPhrase(e).replace(/^\S+ /, "")}.` : ""}`;
-    });
-    const reason =
-      `faultline: this edit crosses ${fresh.length === 1 ? "a fault line" : `${fresh.length} fault lines`} declared in faultline.yml:\n${lines.join("\n")}\n` +
-      `Route the dependency through an allowed system instead, or ask the user before changing the rule.`;
-    process.stdout.write(JSON.stringify({ decision: "block", reason, continueOnBlock: true, systemMessage: `faultline: fault line crossed, ${fresh.map((v) => `${n(v.from)} → ${n(v.to)}`).join(", ")}` }));
+    const reason = describeFaults(fresh, headModel);
+    const short = `faultline: fault line crossed, ${fresh.map((v) => `${systemName(config, v.from)} → ${systemName(config, v.to)}`).join(", ")}`;
+    if (agent === "codex" || agent === "copilot") {
+      process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: reason }, systemMessage: short }));
+    } else {
+      process.stdout.write(JSON.stringify({ decision: "block", reason, continueOnBlock: true, systemMessage: short }));
+    }
     return;
   }
 
-  if (name === "Stop" || name === "SubagentStop") {
+  if (isStop) {
     session.turns++;
     let summary: string | null = null;
     if (server) {
       const res = (await post(server.port, "/api/turn", { label: `Agent turn ${session.turns}` })) as { summary?: string } | null;
       summary = res?.summary ?? null;
     }
-    const { delta } = await ws.diff(session.base, undefined);
+    const { delta, headModel, fresh } = await freshFaults();
+    if (agent === "cursor" && fresh.length) {
+      session.reported.push(...fresh.map((v) => `${v.from}->${v.to}`));
+      saveSession(root, sessionId, session);
+      process.stdout.write(JSON.stringify({ followup_message: describeFaults(fresh, headModel) }));
+      return;
+    }
     const f = findings(delta, config).filter((x) => x.severity !== "info");
     const headlineNow = f.map((x) => x.title).join("; ");
-    saveSession(root, sessionId, session);
     if (f.length && headlineNow !== session.lastHeadline) {
       session.lastHeadline = headlineNow;
       saveSession(root, sessionId, session);
-      process.stdout.write(JSON.stringify({ systemMessage: `faultline: ${summary ?? f.slice(0, 3).map((x) => x.title).join("; ")}` }));
+      if (agent === "claude") process.stdout.write(JSON.stringify({ systemMessage: `faultline: ${summary ?? f.slice(0, 3).map((x) => x.title).join("; ")}` }));
+      return;
     }
+    saveSession(root, sessionId, session);
   }
 }
 

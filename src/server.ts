@@ -4,7 +4,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Args } from "./cli.js";
-import { Assigner } from "./config.js";
+import { addRuleToFile, Assigner } from "./config.js";
+import { addToPlan, removeFromPlan } from "./plan.js";
 import { Workspace } from "./context.js";
 import { headline } from "./describe.js";
 import { diffModels } from "./diff.js";
@@ -162,8 +163,23 @@ export async function cmdMap(args: Args) {
   process.stderr.write(dim("Building the map…\n"));
   await session.start();
 
+  // Only this page may change files: no other origin, no DNS-rebound host, JSON bodies only
+  // (a cross-site JSON POST needs a CORS preflight, which this server never grants).
+  const localHost = (h: string | undefined) => !!h && /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(h);
+  const trusted = (req: http.IncomingMessage) => {
+    if (!localHost(req.headers.host)) return false;
+    const origin = req.headers.origin;
+    if (origin && !localHost(origin.replace(/^https?:\/\//, ""))) return false;
+    if (req.method === "POST" && !String(req.headers["content-type"] ?? "").startsWith("application/json")) return false;
+    return true;
+  };
+
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
+    if (!trusted(req)) {
+      res.writeHead(403);
+      return res.end("forbidden");
+    }
     if (url.pathname === "/api/state") {
       res.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
       return res.end(session.state());
@@ -186,6 +202,31 @@ export async function cmdMap(args: Args) {
       const summary = await session.markTurn(label);
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ ok: true, summary }));
+    }
+    if ((url.pathname === "/api/plan" || url.pathname === "/api/rule") && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      let data: { from?: string; to?: string; why?: string; reason?: string; remove?: boolean } = {};
+      try {
+        data = JSON.parse(body || "{}");
+      } catch {
+        // empty
+      }
+      const ids = new Set(ws.config.systems.map((s) => s.id));
+      if (!data.from || !data.to || !ids.has(data.from) || !ids.has(data.to)) {
+        res.writeHead(400, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: "from and to must be system ids" }));
+      }
+      if (url.pathname === "/api/plan") {
+        if (data.remove) removeFromPlan(ws.root, data.from, data.to);
+        else addToPlan(ws.root, [{ from: data.from, to: data.to, why: data.why }], "map");
+        session.schedule(0);
+      } else {
+        addRuleToFile(ws.root, `${data.from} -> ${data.to}`, data.reason);
+        await session.configChanged();
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ ok: true }));
     }
     if (url.pathname === "/api/refresh" && req.method === "POST") {
       session.schedule(0);
@@ -223,12 +264,13 @@ export async function cmdMap(args: Args) {
   process.on("SIGTERM", cleanup);
 
   // Watch the repo; ignore build output and tooling churn.
-  const ignore = /(^|[\\/])(node_modules|dist|build|\.next|\.astro|coverage|\.turbo|\.faultline)([\\/]|$)/;
+  const ignore = /(^|[\\/])(node_modules|dist|build|target|\.next|\.astro|coverage|\.turbo|__pycache__|\.venv)([\\/]|$)|\.faultline[\\/](cache|sessions|layout|server)/;
   fs.watch(ws.root, { recursive: true }, (_event, name) => {
     if (!name) return;
     const rel = name.toString();
     if (ignore.test(rel)) return;
     if (rel === "faultline.yml") return void session.configChanged();
+    if (rel.replace(/\\/g, "/") === ".faultline/plan.yml") return session.schedule();
     if (rel.startsWith(".git")) {
       if (/^\.git[\\/](HEAD|refs[\\/]heads|index$)/.test(rel)) session.schedule(400);
       return;

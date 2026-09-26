@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import picomatch from "picomatch";
 import YAML from "yaml";
+import { EXTRA_EXTENSIONS } from "./lang/extract.js";
 import type { Config, SystemDef } from "./types.js";
 
 export const CONFIG_FILE = "faultline.yml";
@@ -24,6 +25,40 @@ export const DEFAULT_IGNORE = [
   "**/*.test.*",
   "**/*.spec.*",
   "**/e2e/**",
+  "**/testdata/**",
+  "**/spec/**",
+  "**/Tests/**",
+  "**/src/test/**",
+  "**/src/androidTest/**",
+  "**/benches/**",
+  "**/fuzz/**",
+  "**/tests.rs",
+  "**/test.rs",
+  "**/tests.py",
+  "**/test_*.py",
+  "**/*_test.py",
+  "**/conftest.py",
+  "**/*_test.go",
+  "**/*_spec.rb",
+  "**/*_test.rb",
+  "**/*Test.java",
+  "**/*Test.kt",
+  "**/*Spec.scala",
+  "**/*.Tests/**",
+  "**/*.UnitTests/**",
+  "**/*.IntegrationTests/**",
+  "**/*.FunctionalTests/**",
+  "**/target/**",
+  "**/bin/Debug/**",
+  "**/bin/Release/**",
+  "**/obj/**",
+  "**/__pycache__/**",
+  "**/.venv/**",
+  "**/venv/**",
+  "**/Pods/**",
+  "**/.build/**",
+  "**/_build/**",
+  "**/deps/**",
 ];
 
 export const SOURCE_EXTENSIONS = [
@@ -32,7 +67,13 @@ export const SOURCE_EXTENSIONS = [
   ".astro", ".vue", ".svelte",
 ];
 
+const ALL_EXTENSIONS = new Set([...SOURCE_EXTENSIONS, ...EXTRA_EXTENSIONS]);
+
 export function isSourceFile(p: string): boolean {
+  return ALL_EXTENSIONS.has(path.extname(p).toLowerCase());
+}
+
+export function isJsFile(p: string): boolean {
   return SOURCE_EXTENSIONS.includes(path.extname(p));
 }
 
@@ -85,6 +126,23 @@ export function serializeConfig(config: Config): string {
     "# Systems are the boxes on the map. Each file belongs to the most specific system whose paths match it.\n" +
     "# Rules turn an edge into a fault line: `deny: web -> db` fails `fault check` when that import appears.\n";
   return header + doc.toString({ lineWidth: 0 });
+}
+
+/** Adds a deny rule to faultline.yml, keeping the file's comments and layout. */
+export function addRuleToFile(root: string, deny: string, reason?: string): boolean {
+  const file = configPath(root);
+  const doc = YAML.parseDocument(fs.readFileSync(file, "utf8"));
+  let rules = doc.get("rules") as YAML.YAMLSeq | undefined;
+  if (!rules || !YAML.isSeq(rules)) {
+    rules = new YAML.YAMLSeq();
+    doc.set("rules", rules);
+  }
+  if (rules.items.some((r) => YAML.isMap(r) && String(r.get("deny")).replace(/\s+/g, "") === deny.replace(/\s+/g, ""))) return false;
+  const entry: Record<string, string> = { deny };
+  if (reason) entry.reason = reason;
+  rules.add(doc.createNode(entry));
+  fs.writeFileSync(file, doc.toString({ lineWidth: 0 }));
+  return true;
 }
 
 /** Assigns files to systems and modules. Compiled once per config. */

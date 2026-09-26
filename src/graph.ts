@@ -1,9 +1,10 @@
 import path from "node:path/posix";
 import { Assigner, isSourceFile } from "./config.js";
+import { MANIFEST_NAMES, Project } from "./lang/project.js";
 import { ParseCache, parseFile } from "./parse.js";
 import { parseJsonc, Resolver, type PathAlias, type WorkspacePackage } from "./resolve.js";
 import { blobHash, type Source, WORKTREE } from "./source.js";
-import type { AggEdge, Config, ExternalUse, FileEdge, FileInfo, Model } from "./types.js";
+import type { AggEdge, Config, ExternalUse, FileEdge, FileInfo, Model, ParsedFile } from "./types.js";
 
 const NOISE_DIRS = /(^|\/)(node_modules|\.git)\//;
 
@@ -15,7 +16,8 @@ export async function buildModel(source: Source, config: Config, cache: ParseCac
 
   const pkgFiles = [...allPaths].filter((p) => p === "package.json" || p.endsWith("/package.json"));
   const tsconfigFiles = [...allPaths].filter((p) => /(^|\/)(tsconfig|jsconfig)(\.[\w-]+)?\.json$/.test(p));
-  const meta = await source.read([...pkgFiles, ...tsconfigFiles]);
+  const manifestFiles = [...allPaths].filter((p) => MANIFEST_NAMES.has(p.slice(p.lastIndexOf("/") + 1)) && !assigner.ignored(p));
+  const meta = await source.read([...pkgFiles, ...tsconfigFiles, ...manifestFiles]);
 
   const packages: WorkspacePackage[] = [];
   for (const p of pkgFiles) {
@@ -31,12 +33,12 @@ export async function buildModel(source: Source, config: Config, cache: ParseCac
   const aliases = readAliases(tsconfigFiles, meta);
 
   const sourceFiles = [...allPaths].filter((p) => isSourceFile(p) && !assigner.ignored(p));
-  const parsed = new Map<string, { hash: string; imports: ReturnType<typeof parseFile>["imports"] }>();
+  const parsed = new Map<string, { hash: string; pf: ParsedFile }>();
   const toRead: string[] = [];
   for (const p of sourceFiles) {
     const sha = listing.get(p)!;
-    const cached = source.ref !== WORKTREE ? cache.get(sha) : undefined;
-    if (cached) parsed.set(p, { hash: sha, imports: cached.imports });
+    const cached = source.ref !== WORKTREE ? cache.get(sha) : undefined; // git refs and the index carry blob hashes
+    if (cached) parsed.set(p, { hash: sha, pf: cached });
     else toRead.push(p);
   }
   const contents = await source.read(toRead);
@@ -47,7 +49,7 @@ export async function buildModel(source: Source, config: Config, cache: ParseCac
       result = parseFile(p, content);
       cache.set(hash, result);
     }
-    parsed.set(p, { hash, imports: result.imports });
+    parsed.set(p, { hash, pf: result });
   }
 
   const resolver = new Resolver(allPaths, packages, aliases);
@@ -60,32 +62,53 @@ export async function buildModel(source: Source, config: Config, cache: ParseCac
     const { system, module } = assigner.assign(p);
     files[p] = { path: p, hash, system, module };
   }
-  for (const [p, { imports }] of parsed) {
+  const project = new Project({
+    paths: allPaths,
+    parsed: new Map([...parsed].map(([p, v]) => [p, v.pf])),
+    manifests: new Map(manifestFiles.map((p) => [p, meta.get(p) ?? ""])),
+  });
+  const addExternal = (file: string, pkg: string) => {
+    const key = `${file}\0${pkg}`;
+    if (!seenExternal.has(key)) {
+      seenExternal.add(key);
+      externals.push({ file, pkg });
+    }
+  };
+  for (const [p, { pf }] of parsed) {
     const merged = new Map<string, FileEdge>();
-    for (const imp of imports) {
-      const r = resolver.resolve(p, imp.spec);
-      if (r.kind === "external") {
-        const key = `${p}\0${r.pkg}`;
-        if (!seenExternal.has(key)) {
-          seenExternal.add(key);
-          externals.push({ file: p, pkg: r.pkg });
-        }
-        continue;
-      }
-      if (r.kind !== "file" || r.path === p) continue;
-      const target = r.path;
+    const add = (target: string, names: string[], typeOnly: boolean, kind: FileEdge["kind"], confidence: "exact" | "inferred") => {
+      if (target === p) return;
       if (!files[target]) {
         // Edges into ignored files (tests, fixtures) are not architecture. Workspace package roots are.
-        if (!target.endsWith("package.json") || assigner.ignored(target)) continue;
+        if (!target.endsWith("package.json") || assigner.ignored(target)) return;
         const { system, module } = assigner.assign(target);
         files[target] = { path: target, hash: "package", system, module };
       }
       const existing = merged.get(target);
       if (existing) {
-        existing.names = [...new Set([...existing.names, ...imp.names])];
-        existing.typeOnly = existing.typeOnly && imp.typeOnly;
-      } else {
-        merged.set(target, { from: p, to: target, names: [...imp.names], typeOnly: imp.typeOnly, kind: imp.kind });
+        existing.names = [...new Set([...existing.names, ...names])];
+        existing.typeOnly = existing.typeOnly && typeOnly;
+        if (confidence === "exact") existing.confidence = "exact";
+      } else merged.set(target, { from: p, to: target, names: [...names], typeOnly, kind, confidence });
+    };
+    if (!pf.lang) {
+      for (const imp of pf.imports) {
+        const r = resolver.resolve(p, imp.spec);
+        if (r.kind === "external") addExternal(p, r.pkg);
+        else if (r.kind === "file") add(r.path, imp.names, imp.typeOnly, imp.kind, "exact");
+      }
+    } else {
+      for (const imp of pf.imports) {
+        const r = project.resolve(p, pf, imp);
+        if (r.external) addExternal(p, r.external);
+        for (const t of r.targets) add(t.path, t.names ?? imp.names, imp.typeOnly, imp.kind, t.confidence);
+      }
+      for (const t of project.references(p, pf)) {
+        if (!merged.has(t.path)) add(t.path, t.names ?? [], false, "reference", t.confidence);
+        else {
+          const e = merged.get(t.path)!;
+          e.names = [...new Set([...e.names, ...(t.names ?? [])])];
+        }
       }
     }
     edges.push(...merged.values());

@@ -186,6 +186,13 @@
       edges.push({ id: "s|" + k, from: e.from, to: e.to, count: e.count, typeOnly: e.typeOnly, state, level: "system" });
     }
     for (const [k, e] of C.goneSys) if (ids.has(e.from) && ids.has(e.to)) edges.push({ id: "s|" + k, from: e.from, to: e.to, count: e.count, typeOnly: e.typeOnly, state: "gone", level: "system" });
+    // Intended dependencies: dashed until the code exists, then marked as planned.
+    for (const p of (S.plan && S.plan.edges) || []) {
+      if (!ids.has(p.from) || !ids.has(p.to)) continue;
+      const hit = edges.find((e) => e.from === p.from && e.to === p.to);
+      if (hit) hit.planned = true;
+      else edges.push({ id: "s|" + key(p.from, p.to), from: p.from, to: p.to, count: 0, typeOnly: false, state: "planned", level: "system", planned: true, why: p.why });
+    }
     return { nodes, edges };
   }
 
@@ -356,6 +363,7 @@
       h("span", {}, h("i", { class: "k-new" }), "new dependency"),
       h("span", {}, h("i", { class: "k-fault" }), "crosses a fault line"),
       h("span", {}, h("i", { class: "k-gone" }), "removed"),
+      h("span", {}, h("i", { class: "k-plan" }), "planned"),
       h("span", {}, h("i", { class: "k-touch" }), "changed"));
     els.map.append(els.svg, els.crumbs, els.tools, els.legend);
     bindPanZoom();
@@ -402,13 +410,13 @@
     const layerNodes = s("g");
     const maxCount = Math.max(1, ...routed.map((e) => e.count));
     for (const e of routed) {
-      const w = e.state === "new" || e.state === "fault" ? 2.6 : 1 + Math.min(3.2, (Math.log2(e.count + 1) / Math.log2(maxCount + 1)) * 3.2);
+      const w = e.state === "new" || e.state === "fault" || e.state === "planned" ? 2.6 : 1 + Math.min(3.2, (Math.log2(e.count + 1) / Math.log2(maxCount + 1)) * 3.2);
       const cls = ["edge", e.typeOnly ? "is-type" : "", e.state ? "is-" + e.state : "", e.id === selEdge ? "is-selected" : "", anyChange && !e.state ? "is-faded" : ""].filter(Boolean).join(" ");
-      const marker = e.id === selEdge ? "a-accent" : e.state === "new" ? "a-new" : e.state === "grown" ? "a-hot" : e.state === "fault" || e.state === "gone" || e.state === "fault-old" ? "a-fault" : "a-default";
+      const marker = e.id === selEdge || e.state === "planned" ? "a-accent" : e.state === "new" ? "a-new" : e.state === "grown" ? "a-hot" : e.state === "fault" || e.state === "gone" || e.state === "fault-old" ? "a-fault" : "a-default";
       const path = s("path", { d: e.d, class: cls, "stroke-width": w, "marker-end": `url(#${marker})`, "data-id": e.id, "data-from": e.from, "data-to": e.to });
       layerEdges.append(path);
       const hit = s("path", { d: e.d, class: "edge-hit", "data-id": e.id });
-      hit.append(s("title", { text: `${label(e.from)} → ${label(e.to)} · ${plural(e.count, "import")}${e.typeOnly ? " (types only)" : ""}` }));
+      hit.append(s("title", { text: e.state === "planned" ? `${label(e.from)} → ${label(e.to)} · planned${e.why ? ": " + e.why : ""}` : `${label(e.from)} → ${label(e.to)} · ${plural(e.count, "import")}${e.typeOnly ? " (types only)" : ""}${e.planned ? " · planned" : ""}` }));
       hit.addEventListener("click", (ev) => { if (moved) return; ev.stopPropagation(); select({ type: "edge", id: e.id, level: e.level, from: e.from, to: e.to }); });
       layerHits.append(hit);
     }
@@ -543,6 +551,15 @@
     }
     if (!list.length) content.push(h("div", { class: "fl-empty", text: "No new dependencies between systems, no cycles, no fault lines crossed. Everything stayed inside its boundaries." }));
     body.append(section(scope ? `What changed in ${sysName(scope)}` : "What changed", h("div", { style: "display:flex;flex-direction:column;gap:8px" }, content)));
+    const planEdges = (S.plan && S.plan.edges) || [];
+    if (planEdges.length) {
+      const now = edgesAt(ui.snap, "systemEdges");
+      body.append(section("Plan", h("ul", { class: "fl-findings" }, planEdges.map((p) => {
+        const landed = now.some((e) => e.from === p.from && e.to === p.to);
+        return h("li", {}, h("button", { class: "fl-finding sev-" + (landed ? "structure" : "info"), "data-edge": "1", onclick: () => select({ type: "edge", id: "s|" + key(p.from, p.to), level: "system", from: p.from, to: p.to }) },
+          h("span", { class: "dot" }), h("span", {}, h("div", { class: "t", text: `${sysName(p.from)} → ${sysName(p.to)}` }), h("div", { class: "d", text: `${landed ? "Built" : "Not built yet"}${p.why ? ` · ${p.why}` : ""}` }))));
+      }))));
+    }
     const touched = d.delta.touched;
     if (touched.length) {
       body.append(section("Systems touched", h("div", { class: "fl-touched" }, touched.map((t) => h("button", { class: "fl-trow", onclick: () => select({ type: "system", id: t.system }) },
@@ -589,6 +606,15 @@
     body.append(section("Depends on", outs.length ? h("div", { class: "fl-deps" }, outs.map((e) => chip(e.to, e.count, "out"))) : h("div", { class: "fl-sub", text: "Nothing outside itself." })));
     body.append(section("Used by", ins.length ? h("div", { class: "fl-deps" }, ins.map((e) => chip(e.from, e.count, "in"))) : h("div", { class: "fl-sub", text: "No other system imports it." })));
     if (t) body.append(section("Changed files", fileList(t)));
+    if (S.mode === "live") {
+      const others = S.config.systems.filter((x) => x.id !== id && !edges.some((e) => e.from === id && e.to === x.id));
+      const pick = h("select", { class: "fl-input", id: "fl-plan-target", "aria-label": "System to depend on" }, others.map((x) => h("option", { value: x.id, text: x.name })));
+      const why = h("input", { class: "fl-input", id: "fl-plan-why", placeholder: "Why (optional)", "aria-label": "Why this dependency" });
+      body.append(section("Plan a new dependency", h("div", { class: "fl-steer" }, pick, why, h("button", { class: "fl-btn", onclick: async () => {
+        await post("/api/plan", { from: id, to: pick.value, why: why.value.trim() || undefined });
+        toast(`Planned: ${id} → ${pick.value}`);
+      } }, "Add to plan"))));
+    }
   }
 
   function panelModule(body, id) {
@@ -639,15 +665,45 @@
     ));
     const match = (x, fileSys, fileMod) => (x.kind === "system" ? fileSys === x.id : fileMod === x.id);
     const { list, complete } = evidence((e) => match(A, e.fs, e.fm) && match(B, e.ts, e.tm));
+    const planned = ((S.plan && S.plan.edges) || []).find((p) => p.from === sel.from && p.to === sel.to);
+    if (planned && !list.length && !gone) {
+      body.append(h("p", { class: "fl-sub", text: `Planned${planned.why ? `: ${planned.why}` : ""}. No imports yet; it lights up when the code lands.` }));
+      if (S.mode === "live") body.append(steerEdge(sel.from, sel.to, violation));
+      return;
+    }
     if (gone) {
       const g = C.goneSys.get(key(sel.from, sel.to));
       body.append(section("Imports that were removed", evList(g.evidence.map((e) => ({ ...e, isNew: false })))));
       return;
     }
+    if (S.mode === "live" && sel.level === "system") body.append(steerEdge(sel.from, sel.to, violation));
     const newOnes = list.filter((e) => e.isNew).length;
     body.append(h("dl", { class: "fl-kv" }, h("dt", { text: "Imports" }), h("dd", { text: complete ? String(list.length) : "changes only" }), newOnes ? h("dt", { text: "New" }) : null, newOnes ? h("dd", { class: "c-add", text: String(newOnes) }) : null));
     body.append(section("The imports behind it", list.length ? evList(list.slice(0, 80)) : h("div", { class: "fl-empty", text: complete ? "No file-level imports match." : "Evidence for older points on the timeline covers changed imports only. Jump to the latest point to see every import." })));
     if (list.length > 80) body.append(h("p", { class: "fl-sub", text: `…and ${list.length - 80} more.` }));
+  }
+
+  /** Live mode: turn an edge into a rule, or plan and unplan it. Agents read both through faultline. */
+  function steerEdge(from, to, violation) {
+    const planned = ((S.plan && S.plan.edges) || []).some((p) => p.from === from && p.to === to);
+    const reason = h("input", { class: "fl-input", id: "fl-rule-reason", placeholder: "Why (optional)", "aria-label": "Reason for the rule" });
+    const wrap = h("div", { class: "fl-steer" });
+    if (!violation) {
+      wrap.append(reason, h("button", { class: "fl-btn fl-danger", onclick: async () => {
+        await post("/api/rule", { from, to, reason: reason.value.trim() || undefined });
+        toast(`Rule added: deny ${from} -> ${to}`);
+      } }, "Forbid this dependency"));
+    }
+    wrap.append(h("button", { class: "fl-btn", onclick: async () => {
+      await post("/api/plan", { from, to, remove: planned || undefined });
+      toast(planned ? "Removed from plan" : "Added to plan");
+    } }, planned ? "Remove from plan" : "Add to plan"));
+    return section("Steer", wrap);
+  }
+
+  async function post(url, body) {
+    const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    if (!res.ok) toast("Could not save: " + (await res.text()));
   }
 
   function evList(list) {

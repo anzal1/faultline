@@ -23,7 +23,7 @@ export interface Config {
   ignore: string[];
 }
 
-export type ImportKind = "static" | "dynamic" | "require" | "reexport";
+export type ImportKind = "static" | "dynamic" | "require" | "reexport" | "include" | "reference" | "project";
 
 export interface ParsedImport {
   spec: string;
@@ -35,6 +35,14 @@ export interface ParsedImport {
 export interface ParsedFile {
   imports: ParsedImport[];
   exports: string[];
+  /** Language family for non-JS files (python, go, rust, jvm, csharp, ...). Absent means JS/TS. */
+  lang?: string;
+  /** Packages, namespaces or modules this file declares. */
+  declares?: string[];
+  /** Type names declared in this file. */
+  types?: string[];
+  /** Capitalised names referenced in this file, for languages that do not import files. */
+  refs?: string[];
 }
 
 export interface FileInfo {
@@ -50,6 +58,8 @@ export interface FileEdge {
   names: string[];
   typeOnly: boolean;
   kind: ImportKind;
+  /** exact: named by an import the language resolves. inferred: matched by a referenced type name. Rules only fire on exact edges. */
+  confidence?: "exact" | "inferred";
   /** Module ids, filled in when the edge is shipped to the map UI. */
   fm?: string;
   tm?: string;

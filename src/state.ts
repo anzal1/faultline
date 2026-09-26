@@ -3,6 +3,7 @@ import { findings, headline, type Finding } from "./describe.js";
 import { diffModels } from "./diff.js";
 import { aggregate } from "./graph.js";
 import { systemLayout, type Layout } from "./layout.js";
+import { loadPlan, type Plan } from "./plan.js";
 import type { AggEdge, Config, Delta, FileEdge, Model } from "./types.js";
 
 /** One point on the timeline: the base, a commit, an agent turn, or the live working tree. */
@@ -62,6 +63,8 @@ export interface MapState {
   graph: CompactGraph;
   /** Optional context shown above the findings, e.g. what a shared demo contains. */
   note?: string;
+  /** Dependencies someone intends to add (.faultline/plan.yml). */
+  plan: Plan;
 }
 
 export function systemViews(model: Model, config: Config): SystemView[] {
@@ -166,6 +169,7 @@ export async function buildState(opts: {
     layout,
     snapshots,
     graph: compactGraph(models[models.length - 1].model),
+    plan: loadPlan(opts.root),
   };
   return state;
 }

@@ -1,6 +1,7 @@
 import { systemName } from "../config.js";
 import { findings, headline, importPhrase } from "../describe.js";
 import { aggregate } from "../graph.js";
+import type { Plan } from "../plan.js";
 import type { AggEdge, Config, Delta, Model } from "../types.js";
 
 export const COMMENT_MARKER = "<!-- faultline:pr-comment -->";
@@ -61,7 +62,7 @@ export function mermaidDelta(delta: Delta, head: Model, config: Config, maxNodes
   return lines.join("\n");
 }
 
-export function renderMarkdown(delta: Delta, head: Model, config: Config, opts: { mapUrl?: string } = {}): string {
+export function renderMarkdown(delta: Delta, head: Model, config: Config, opts: { mapUrl?: string; plan?: Plan } = {}): string {
   const f = findings(delta, config);
   const n = (id: string) => systemName(config, id);
   const faults = f.filter((x) => x.severity === "fault");
@@ -78,6 +79,18 @@ export function renderMarkdown(delta: Delta, head: Model, config: Config, opts: 
   if (diagram && (faults.length || f.some((x) => x.severity === "structure"))) {
     out.push("", "```mermaid", diagram, "```");
     out.push("<sub>🟩 new dependency · 🟥 fault line or removed · 🟧 system touched by this PR</sub>");
+  }
+  const plan = opts.plan?.edges ?? [];
+  if (plan.length) {
+    const headEdges = aggregate(head, "system");
+    const added = new Set(delta.systemEdges.added.map((e) => `${e.from}>${e.to}`));
+    out.push("", "**Plan versus actual**", "");
+    for (const p of plan) {
+      const built = headEdges.some((e) => e.from === p.from && e.to === p.to);
+      out.push(`- ${built ? (added.has(`${p.from}>${p.to}`) ? "✅ built in this PR" : "✅ already built") : "⏳ planned, not built yet"}: ${n(p.from)} → ${n(p.to)}${p.why ? ` (${p.why})` : ""}`);
+    }
+    const planned = new Set(plan.map((p) => `${p.from}>${p.to}`));
+    for (const e of delta.systemEdges.added) if (!planned.has(`${e.from}>${e.to}`)) out.push(`- ⚠️ not in the plan: ${n(e.from)} → ${n(e.to)}`);
   }
   const evidence = [...delta.violations.introduced, ...delta.systemEdges.added].filter((e) => e.evidence.length);
   if (evidence.length) {

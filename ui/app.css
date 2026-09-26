@@ -167,6 +167,7 @@ button { font: inherit; color: inherit; }
 .fl-legend .k-new { border-color: var(--new); }
 .fl-legend .k-fault { border-color: var(--fault); }
 .fl-legend .k-gone { border-color: var(--fault); border-top-style: dashed; opacity: 0.7; }
+.fl-legend .k-plan { border-color: var(--accent); border-top-style: dotted; }
 .fl-legend .k-touch { width: 10px; height: 10px; border: 2px solid var(--touch); border-radius: 3px; }
 
 /* SVG map elements */
@@ -198,6 +199,7 @@ button { font: inherit; color: inherit; }
 .edge.is-fault-old { stroke: var(--fault); opacity: 0.55; }
 .edge.is-gone { stroke: var(--fault); opacity: 0.6; stroke-dasharray: 5 5; }
 .edge.is-hot { opacity: 0.95; stroke: var(--ink-2); }
+.edge.is-planned { stroke: var(--accent); opacity: 0.9; stroke-dasharray: 2 6; }
 .edge.is-selected { stroke: var(--accent); opacity: 1; }
 .edge.is-faded { opacity: 0.08; }
 .edge.is-new.is-faded, .edge.is-fault.is-faded, .edge.is-gone.is-faded { opacity: 0.3; }
@@ -303,6 +305,10 @@ button { font: inherit; color: inherit; }
 .fl-files li { overflow-wrap: anywhere; }
 .fl-files .st { display: inline-block; width: 14px; font-weight: 600; }
 
+.fl-steer { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fl-input { font: inherit; font-size: 12.5px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; flex: 1 1 140px; }
+.fl-danger { color: var(--fault); border-color: color-mix(in srgb, var(--fault) 40%, var(--line)); }
+.fl-danger:hover { background: var(--fault-soft); }
 .fl-toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; background: var(--ink); color: var(--surface); padding: 6px 12px; border-radius: 999px; font-size: 12.5px; box-shadow: var(--shadow); pointer-events: none; }
 
 @media (max-width: 860px) {

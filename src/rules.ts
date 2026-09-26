@@ -26,7 +26,8 @@ export function findViolations(model: Model, systemEdges: AggEdge[], rules: Comp
   for (const edge of systemEdges) {
     for (const r of rules) {
       if (!r.from(edge.from) || !r.to(edge.to)) continue;
-      const evidence = evidenceFor(model, "system", edge.from, edge.to).filter((e) => r.rule.types || !e.typeOnly);
+      // Only edges the language itself names can break a rule; inferred references never block anyone.
+      const evidence = evidenceFor(model, "system", edge.from, edge.to).filter((e) => (r.rule.types || !e.typeOnly) && e.confidence !== "inferred");
       if (evidence.length === 0) continue;
       out.push({ from: edge.from, to: edge.to, rule: r.rule.deny, reason: r.rule.reason, evidence });
       break;

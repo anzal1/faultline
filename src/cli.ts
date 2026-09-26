@@ -6,25 +6,34 @@ import { findRoot, Workspace } from "./context.js";
 import { findings } from "./describe.js";
 import { aggregate } from "./graph.js";
 import picomatch from "picomatch";
-import { collectProposeInput, defaultConfig, proposeHeuristic, proposeWithClaude, skipGlobs } from "./propose.js";
+import { collectProposeInput, defaultConfig, outline, proposeHeuristic, proposeWithClaude, skipGlobs } from "./propose.js";
 import { renderMarkdown } from "./render/markdown.js";
 import { bold, dim, green, red, renderText, yellow } from "./render/text.js";
-import { makeSource } from "./source.js";
+import { agentDiff, overview, place, withCost } from "./agent.js";
+import { addToPlan, loadPlan, parsePlanLine, removeFromPlan } from "./plan.js";
+import { INDEX, makeSource } from "./source.js";
 
-const HELP = `${bold("fault")}: a living architecture map for your codebase
+const HELP = `${bold("fault")}: a living architecture map for any codebase, any language, any agent
 
-  fault init [--ai] [--force]        Propose systems from the repo and write faultline.yml
+  fault init [--force]               Propose systems from the repo and write faultline.yml
+        --outline  print the outline for your agent to name   --ai  name them with Claude
   fault map [--base <ref>]           Open the live map; it redraws as you (or an agent) edit
   fault diff [base] [head]           Structural diff. Defaults: HEAD → working tree
-        --format text|markdown|json  --verbose  --out <file>
-  fault check [base] [head]          Exit 1 if the change crosses a fault line (for CI)
-        --strict                     also fail on new dependency cycles
+        --format text|markdown|json|agent  --verbose  --out <file>
+  fault check [base] [head]          Exit 1 if the change crosses a fault line (CI, pre-commit)
+        --staged  --strict (also fail on new cycles)  --quiet
   fault export [base] [head] -o f    Self-contained HTML map of a change, to share
   fault replay <from> [to] -o f      Replay history commit by commit as a map timeline
         --max <n>  --worktree [label]   end with uncommitted changes
-  fault hook                         Claude Code hook entry point (reads the event on stdin)
-  fault install-hook                 Add faultline to .claude/settings.json in this repo
-  fault systems                      Print the declared systems and their dependencies
+
+For agents (compact answers, a few hundred tokens each):
+  fault setup [--agent all|claude,cursor,codex,copilot,gemini,kiro,zed,opencode]
+                                     Register the MCP server, hooks, AGENTS.md and a pre-commit hook
+  fault mcp                          MCP server over stdio: tools map, place, check, plan
+  fault overview [system]            The architecture in one screen
+  fault place <path> [imports...]    Which system a path belongs to and what it may import
+  fault plan ["a -> b: why"] [--remove "a -> b"]   Declare intended new dependencies
+  fault hook --agent <name>          Hook entry point for Claude Code, Codex, Copilot, Cursor
 
 Systems live in faultline.yml. Commit it: it is the map everyone shares.`;
 
@@ -35,7 +44,7 @@ export interface Args {
 
 export function parseArgs(argv: string[]): Args {
   const out: Args = { _: [], flags: {} };
-  const valued = new Set(["format", "out", "o", "base", "port", "max", "target", "label", "head", "title", "worktree", "map-url", "note"]);
+  const valued = new Set(["format", "out", "o", "base", "port", "max", "target", "label", "head", "title", "worktree", "map-url", "note", "agent", "remove", "cwd"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--")) {
@@ -68,6 +77,13 @@ async function cmdInit(args: Args) {
     process.exit(1);
   }
   let systems = proposeHeuristic(input, args.flags.target ? Number(args.flags.target) : undefined);
+  if (args.flags.outline) {
+    // Provider-neutral naming: hand the outline and the draft to whichever agent you already use.
+    console.log("Name these systems well and write faultline.yml. Group directories into 8 to 16 systems, one responsibility each, using the team's own words.\n");
+    console.log("Directory outline (source files only):\n" + outline(input.files) + "\n");
+    console.log("Mechanical draft:\n" + systems.map((s) => `- ${s.id}: ${s.name} [${s.paths.join(", ")}]`).join("\n"));
+    return;
+  }
   let how = "from the directory structure";
   const wantAi = args.flags.ai || (process.env.ANTHROPIC_API_KEY && !args.flags["no-ai"]);
   if (wantAi) {
@@ -102,7 +118,8 @@ async function cmdDiff(args: Args) {
   const format = String(args.flags.format ?? "text");
   let out: string;
   if (format === "json") out = JSON.stringify({ delta, findings: findings(delta, ws.config) }, null, 2);
-  else if (format === "markdown" || format === "md") out = renderMarkdown(delta, headModel, ws.config, { mapUrl: args.flags["map-url"] as string | undefined });
+  else if (format === "agent") out = withCost(agentDiff(delta, ws.config, headModel, ws.root));
+  else if (format === "markdown" || format === "md") out = renderMarkdown(delta, headModel, ws.config, { mapUrl: args.flags["map-url"] as string | undefined, plan: loadPlan(ws.root) });
   else out = renderText(delta, ws.config, { verbose: !!args.flags.verbose });
   const target = (args.flags.out ?? args.flags.o) as string | undefined;
   if (target) fs.writeFileSync(target, out + "\n");
@@ -111,15 +128,48 @@ async function cmdDiff(args: Args) {
 
 async function cmdCheck(args: Args) {
   const ws = Workspace.open();
-  const [base, head] = args._;
+  let [base, head] = args._;
+  if (args.flags.staged) {
+    base = base ?? "HEAD";
+    head = INDEX;
+  }
   const { delta } = await ws.diff(base, head);
-  console.log(renderText(delta, ws.config, { verbose: true }));
   const failed = delta.violations.introduced.length > 0 || (args.flags.strict && delta.cycles.added.length > 0);
+  if (!args.flags.quiet || failed) console.log(renderText(delta, ws.config, { verbose: true }));
   if (failed) {
     console.log(`\n${red("✖ fault check failed")}: this change crosses a declared fault line.`);
     process.exit(1);
   }
-  console.log(`\n${green("✓ fault check passed")}`);
+  if (!args.flags.quiet) console.log(`\n${green("✓ fault check passed")}`);
+}
+
+async function cmdOverview(args: Args) {
+  const ws = Workspace.open();
+  console.log(withCost(await overview(ws, { system: args._[0] })));
+}
+
+async function cmdPlace(args: Args) {
+  const ws = Workspace.open();
+  const [p, ...imports] = args._;
+  if (!p) throw new Error("Usage: fault place <path> [import targets...]");
+  console.log(withCost(await place(ws, p, imports)));
+}
+
+async function cmdPlan(args: Args) {
+  const ws = Workspace.open();
+  const ids = new Set(ws.config.systems.map((s) => s.id));
+  for (const line of args._) {
+    const e = parsePlanLine(line);
+    if (!e || !ids.has(e.from) || !ids.has(e.to)) throw new Error(`"${line}" is not "from -> to: why" with system ids (${[...ids].join(", ")})`);
+    addToPlan(ws.root, [e], "cli");
+  }
+  if (typeof args.flags.remove === "string") {
+    const e = parsePlanLine(args.flags.remove);
+    if (e) removeFromPlan(ws.root, e.from, e.to);
+  }
+  const plan = loadPlan(ws.root);
+  if (!plan.edges.length) console.log(dim("No planned dependencies. Add one: fault plan \"api -> billing: needs invoices\""));
+  for (const e of plan.edges) console.log(`${e.from} → ${e.to}${e.why ? dim(`  ${e.why}`) : ""}`);
 }
 
 async function cmdSystems() {
@@ -154,6 +204,24 @@ async function main() {
       return cmdCheck(args);
     case "systems":
       return cmdSystems();
+    case "overview":
+      return cmdOverview(args);
+    case "place":
+      return cmdPlace(args);
+    case "plan":
+      return cmdPlan(args);
+    case "mcp": {
+      const { cmdMcp } = await import("./mcp.js");
+      return cmdMcp(args);
+    }
+    case "setup": {
+      const { cmdSetup } = await import("./setup.js");
+      return cmdSetup(args);
+    }
+    case "install-git-hook": {
+      const { cmdInstallGitHook } = await import("./setup.js");
+      return cmdInstallGitHook(args);
+    }
     case "map":
     case "watch": {
       const { cmdMap } = await import("./server.js");
