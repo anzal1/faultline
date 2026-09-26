@@ -30,7 +30,7 @@ This repo declares its architecture in \`faultline.yml\` (systems and fault line
 - \`check\`: after editing, what your change did to the structure.
 - \`plan "from -> to: why"\`: declare a new dependency between systems before writing it.
 
-Use the faultline MCP tools, or the CLI: \`npx -y @anzal1/faultline <command>\`.
+Use the faultline MCP tools, or the CLI: \`npx -y @anzalabidi/faultline <command>\`.
 Fault lines are hard rules. If \`check\` reports one, route the import through an allowed system (it suggests one) instead of editing \`faultline.yml\`.
 ${END}`;
 
@@ -201,7 +201,7 @@ const WRITERS: Writer[] = [
 export function faultlineCommand(npx: boolean): Cmd {
   const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "cli.js");
   // Installed from npm: `npx` works everywhere. Running from a checkout: point at this build.
-  if (npx || cli.includes(`${path.sep}node_modules${path.sep}`)) return { exe: "npx", args: ["-y", "@anzal1/faultline"], line: "npx -y @anzal1/faultline" };
+  if (npx || cli.includes(`${path.sep}node_modules${path.sep}`)) return { exe: "npx", args: ["-y", "@anzalabidi/faultline"], line: "npx -y @anzalabidi/faultline" };
   return { exe: process.execPath, args: [cli], line: `"${process.execPath}" "${cli}"` };
 }
 

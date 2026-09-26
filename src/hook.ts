@@ -176,7 +176,7 @@ export async function cmdInstallHook(args: Args) {
   const root = findRoot(process.cwd());
   const file = path.join(root, ".claude", "settings.json");
   const cli = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "cli.js");
-  const command = args.flags.npx ? "npx -y @anzal1/faultline hook" : `"${process.execPath}" "${cli}" hook`;
+  const command = args.flags.npx ? "npx -y @anzalabidi/faultline hook" : `"${process.execPath}" "${cli}" hook`;
   let settings: Record<string, any> = {};
   if (fs.existsSync(file)) settings = JSON.parse(fs.readFileSync(file, "utf8"));
   settings.hooks ??= {};

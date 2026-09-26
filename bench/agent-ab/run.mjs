@@ -44,6 +44,14 @@ const TASKS = [
     id: "double-slash",
     prompt: `In development, Astro redirects URLs with duplicate trailing slashes (for example /about// to /about/) with a 301; the decision lives in the dev server's trailing-slash handling. Production does not do this yet. Make the production App (packages/astro/src/core/app) apply the same duplicate-slash redirect, reusing the existing decision logic rather than duplicating it. ${COMMON}`,
     done: (diff) => /301/.test(diff) && /core\/app/.test(diff),
+    // Control: production already collapses duplicate slashes in core/routing, so this task never
+    // tempts a violation. Kept to check faultline does no harm when there is nothing to catch.
+    control: true,
+  },
+  {
+    id: "agent-errors",
+    prompt: `When the production App (packages/astro/src/core/app) renders a 500 error response, add an \`X-Astro-Error\` response header containing the error's name, so a coding agent debugging the site can see what failed. Only add it when the process is being run by a coding agent. Astro already detects this in its CLI; reuse that detection rather than writing new detection logic. ${COMMON}`,
+    done: (diff) => /X-Astro-Error/i.test(diff) && /core\/app|core\/errors/.test(diff),
   },
 ];
 const ARMS = ["none", "docs", "faultline"];

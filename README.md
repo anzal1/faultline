@@ -10,7 +10,11 @@ fault diff main   # what this branch did to the structure, in plain English
 fault check main  # exit 1 if it crosses a fault line (CI)
 ```
 
-> Status: working, not yet on npm. Until it is, install from source: `npm install && npm run build && npm link`, then `fault` is on your PATH.
+```
+npm install -g @anzalabidi/faultline    # or run any command with npx -y @anzalabidi/faultline
+```
+
+Node 20 or newer. The command is `fault`.
 
 It answers one question at a glance: **what did this change do to the shape of the system?** Not which lines moved. Which boxes started talking to each other, which boundaries got crossed, and the exact imports behind each of those.
 

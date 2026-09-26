@@ -1,5 +1,5 @@
 {
-  "name": "@anzal1/faultline",
+  "name": "@anzalabidi/faultline",
   "version": "0.2.0",
   "description": "A living architecture map for any codebase, any language, any coding agent. See what every change does to the structure, and stop it crossing the lines you drew.",
   "type": "module",
