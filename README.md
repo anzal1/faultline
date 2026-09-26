@@ -1,5 +1,9 @@
 # faultline
 
+[![faultline replaying the last 260 commits of withastro/astro: the map lights up the one PR that added a dependency, shows the exact import behind it, then catches a simulated agent edit crossing a fault line](docs/demo.gif)](docs/demo.mp4)
+
+<sub>The last 260 commits of withastro/astro on a map that never moves. Two changed how its systems depend on each other; one is shown with the exact import behind it. The final step is a simulated agent edit crossing a fault line. The systems and rules are an example map, not the Astro team's (<a href="examples/astro/faultline.yml">examples/astro</a>). <a href="docs/demo.mp4">Video with narration</a>.</sub>
+
 A living architecture map for any codebase. You declare the systems once. Every change after that, yours or any coding agent's, shows up as light on a map that never moves, as a sentence in the PR, and as a short answer the agent can read before it writes the wrong import.
 
 ```
