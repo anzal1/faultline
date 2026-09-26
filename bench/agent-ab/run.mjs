@@ -25,6 +25,9 @@ const JOBS = Number(flag("jobs", 3));
 const ONLY = flag("only", "");
 const WORK = flag("work", "/private/tmp/fl-ab");
 const OUT = path.resolve(flag("out", path.join(here, "results")));
+// A later round can widen the rules; its runs are labelled so rounds never mix.
+const ROUND = flag("round", "");
+const PROSE_EXTRA = flag("prose-extra", "");
 
 const RULES_PROSE = `
 ## Architecture rules
@@ -70,7 +73,7 @@ function prepare(dir, arm) {
   }
   sh("git", ["-C", repo, "worktree", "add", "--detach", dir, "HEAD"]);
   const mcp = path.join(dir, ".ab-mcp.json");
-  if (arm === "docs") fs.appendFileSync(path.join(dir, "AGENTS.md"), RULES_PROSE);
+  if (arm === "docs") fs.appendFileSync(path.join(dir, "AGENTS.md"), RULES_PROSE + (PROSE_EXTRA ? `- ${PROSE_EXTRA}\n` : ""));
   if (arm === "faultline") {
     fs.copyFileSync(configFile, path.join(dir, "faultline.yml"));
     sh("node", [CLI, "setup", "--agent", "claude", "--no-git-hook"], dir);
@@ -165,7 +168,7 @@ async function main() {
   fs.mkdirSync(OUT, { recursive: true });
   fs.mkdirSync(WORK, { recursive: true });
   const runs = [];
-  for (const task of TASKS) for (const arm of ARMS) for (let i = 1; i <= N; i++) runs.push({ task, arm, i, id: `${task.id}-${arm}-${i}` });
+  for (const task of TASKS) for (const arm of ARMS) for (let i = 1; i <= N; i++) runs.push({ task, arm, i, id: `${task.id}${ROUND ? "@" + ROUND : ""}-${arm}-${i}` });
   const todo = runs.filter((r) => (!ONLY || r.id.includes(ONLY)) && !fs.existsSync(path.join(OUT, `${r.id}.json`)));
   console.log(`${todo.length} runs to do (${runs.length} total), model ${MODEL}, ${JOBS} at a time`);
   let next = 0;
@@ -182,7 +185,7 @@ async function main() {
         const s = score(dir, r.task);
         fs.writeFileSync(path.join(OUT, `${r.id}.diff`), s.diff);
         delete s.diff;
-        const rec = { id: r.id, task: r.task.id, arm: r.arm, i: r.i, exit: code, wallMs: Date.now() - t0, ...m, ...s };
+        const rec = { id: r.id, task: r.task.id + (ROUND ? "@" + ROUND : ""), round: ROUND || "1", arm: r.arm, i: r.i, exit: code, wallMs: Date.now() - t0, ...m, ...s };
         fs.writeFileSync(path.join(OUT, `${r.id}.json`), JSON.stringify(rec, null, 2));
         console.log(`${r.id.padEnd(28)} ${s.violations.length ? "VIOLATION" : "clean    "} done=${s.done} reads=${m.reads} faultline=${m.faultlineCalls.join("+") || "-"} hook=${m.hookWarnings} cost=$${(m.cost ?? 0).toFixed(3)} ${Math.round((Date.now() - t0) / 1000)}s`);
       } catch (e) {

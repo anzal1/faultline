@@ -79,7 +79,7 @@ export function proposeHeuristic(input: ProposeInput, target = defaultTarget(inp
     const pieces = splitDir(dir);
     const share = size(next) / total;
     // Single-child directories (src/, lib/) are free to descend through.
-    const growth = pieces.filter((p) => size(p) >= Math.max(3, total * 0.012)).length - 1;
+    const growth = pieces.filter((p) => size(p) >= (total >= 40 ? Math.max(3, total * 0.012) : 1)).length - 1;
     if (dir !== root && growth > 0) {
       if (cands.length >= target && share < 0.2) break;
       if (cands.length + growth > target * 1.8 && share < 0.35) break;
@@ -87,8 +87,9 @@ export function proposeHeuristic(input: ProposeInput, target = defaultTarget(inp
     cands = cands.filter((c) => c !== next).concat(pieces);
   }
 
-  // Fold tiny candidates into one "misc" system per parent so the map stays readable.
-  const tiny = (c: Candidate) => size(c) < Math.max(3, total * 0.012);
+  // Fold tiny candidates into one "misc" system per parent so the map stays readable. Small repos keep
+  // every folder: with a handful of files, each folder is already a meaningful box.
+  const tiny = (c: Candidate) => total >= 40 && size(c) < Math.max(3, total * 0.012);
   const keep = cands.filter((c) => !tiny(c) && size(c) > 0);
   const byParent = new Map<string, Candidate[]>();
   for (const c of cands.filter((c) => tiny(c) && size(c) > 0)) {
