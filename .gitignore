@@ -3,3 +3,4 @@ dist
 .faultline/cache
 *.log
 demo/*.mp4
+bench/agent-ab/results/
