@@ -66,8 +66,23 @@
 
   .figure { margin-top: 56px; }
   .frame { border: 1px solid var(--rule-2); border-radius: 4px; overflow: hidden; background: var(--paper); }
-  .frame iframe { display: block; width: 100%; height: 640px; border: 0; }
+  .frame iframe { display: block; width: 100%; height: min(760px, 78vh); min-height: 560px; border: 0; }
   @media (max-width: 860px) { .frame iframe { height: 820px; } }
+  /* The hero scene: hairlines that draw themselves. */
+  .hero-fig { margin-top: 64px; }
+  #scene { display: block; width: 100%; height: auto; overflow: visible; }
+  #scene .box { fill: var(--paper); stroke: var(--rule-2); stroke-width: 1; }
+  #scene .name { font: 500 15px var(--sans); fill: var(--ink); }
+  #scene .sub { font: 400 12px var(--mono); fill: var(--ink-3); }
+  #scene .edge { fill: none; stroke: rgba(26, 30, 28, 0.32); stroke-width: 1; }
+  #scene .fault { fill: none; stroke: rgba(26, 30, 28, 0.45); stroke-width: 1; stroke-dasharray: 3 4; }
+  #scene .cross { fill: none; stroke: var(--red); stroke-width: 1.25; }
+  #scene .route { fill: none; stroke: #178a5a; stroke-width: 1.25; }
+  #scene .label { font: 400 12px var(--mono); fill: var(--ink-3); }
+  #scene .code { font: 400 13px var(--mono); fill: var(--ink-2); }
+  #scene .file { font: 400 12px var(--mono); fill: var(--ink-3); }
+  #scene .note { font: 400 12px var(--mono); fill: var(--ink); }
+  #scene.narrow .name { font-size: 13px; } #scene.narrow .sub, #scene.narrow .label, #scene.narrow .file, #scene.narrow .note { font-size: 10.5px; } #scene.narrow .code { font-size: 11px; }
   .caption { display: flex; flex-wrap: wrap; gap: 4px 20px; margin-top: 12px; font: 400 13px/20px var(--mono); color: var(--ink-3); }
   .caption span:first-child { color: var(--ink-2); }
 
@@ -170,16 +185,28 @@
       <button class="cmd" data-copy="npx @anzalabidi/faultline init" aria-label="Copy the install command"><span class="p">$</span>npx @anzalabidi/faultline init<span class="c">Copy</span></button>
       <a href="https://github.com/anzal1/faultline#readme">Read the docs</a>
     </div>
-    <figure class="figure" style="margin-inline:0">
-      <div class="frame"><iframe src="astro-map.html" title="The faultline map of the Astro repository" loading="lazy"></iframe></div>
-      <figcaption class="caption"><span>withastro/astro · 22 systems · 2 rules</span><span>One simulated edit crosses a rule. Click the red edge, or double-click a system.</span></figcaption>
+    <figure class="figure hero-fig" style="margin-inline:0">
+      <svg id="scene" role="img" aria-label="Request handling imports the dev server across a declared rule. faultline stops it and shows the allowed route through Core utilities."></svg>
+      <figcaption class="caption"><span>Request handling → Dev server, from the Astro map below.</span><span>The rule, the import and the suggested route are real.</span></figcaption>
     </figure>
   </div>
+
+  <section aria-labelledby="h-map">
+    <div class="wrap">
+      <div class="rule" aria-hidden="true"><svg><use href="#zig"/></svg></div>
+      <div class="head"><span class="num">01</span><h2 id="h-map">The real map</h2></div>
+      <p class="intro">The Astro monorepo, 22 systems, with one simulated edit that crosses a rule. Click the red edge for the import behind it, or double-click a system to open it.</p>
+      <figure class="figure" style="margin: 36px 0 0">
+        <div class="frame"><iframe src="astro-map.html" title="The faultline map of the Astro repository" loading="lazy" tabindex="-1"></iframe></div>
+        <figcaption class="caption"><span>withastro/astro · 22 systems · 2 rules</span><span>The systems and rules are an example, not the Astro team's.</span></figcaption>
+      </figure>
+    </div>
+  </section>
 
   <section aria-labelledby="h-crossed">
     <div class="wrap">
       <div class="rule red" aria-hidden="true"><svg><use href="#zig"/></svg></div>
-      <div class="head"><span class="num">01</span><h2 id="h-crossed">What crossed</h2></div>
+      <div class="head"><span class="num">02</span><h2 id="h-crossed">What crossed</h2></div>
       <p class="intro">Coding agents did two real tasks in the Astro repo, three times each, where the obvious import breaks a declared rule. The same rules were given to them as written docs, or through faultline.</p>
       <table class="runs">
         <thead><tr><th scope="col">Task</th><th scope="col">Rules in docs</th><th scope="col">faultline</th></tr></thead>
@@ -200,7 +227,7 @@
   <section aria-labelledby="h-how">
     <div class="wrap">
       <div class="rule" aria-hidden="true"><svg><use href="#zig"/></svg></div>
-      <div class="head"><span class="num">02</span><h2 id="h-how">How it works</h2></div>
+      <div class="head"><span class="num">03</span><h2 id="h-how">How it works</h2></div>
       <div class="grid steps">
         <div class="step">
           <h3>Declare</h3>
@@ -235,7 +262,7 @@ Allowed route: web → api → db</div>
   <section aria-labelledby="h-agents">
     <div class="wrap">
       <div class="rule" aria-hidden="true"><svg><use href="#zig"/></svg></div>
-      <div class="head"><span class="num">03</span><h2 id="h-agents">One file every agent respects</h2></div>
+      <div class="head"><span class="num">04</span><h2 id="h-agents">One file every agent respects</h2></div>
       <div class="grid pair">
         <div class="text">
           <p><code>fault setup</code> connects the MCP server, hooks, AGENTS.md and a pre-commit check for the agents your repo uses.</p>
@@ -260,7 +287,7 @@ jobs:
   <section aria-labelledby="h-true">
     <div class="wrap">
       <div class="rule" aria-hidden="true"><svg><use href="#zig"/></svg></div>
-      <div class="head"><span class="num">04</span><h2 id="h-true">The map keeps itself current</h2></div>
+      <div class="head"><span class="num">05</span><h2 id="h-true">The map keeps itself current</h2></div>
       <p class="intro">Where code lives is a fact, so faultline keeps it up to date. What may depend on what is a decision, so it stays with people.</p>
       <div class="grid pair">
         <div class="text" style="grid-column: span 12">
@@ -277,7 +304,7 @@ jobs:
   <section aria-labelledby="h-fp">
     <div class="wrap">
       <div class="rule" aria-hidden="true"><svg><use href="#zig"/></svg></div>
-      <div class="head"><span class="num">05</span><h2 id="h-fp">What your code costs to load</h2></div>
+      <div class="head"><span class="num">06</span><h2 id="h-fp">What your code costs to load</h2></div>
       <div class="grid pair">
         <div class="text">
           <p>Pick an entry point and the map shows everything it loads at startup: how much of each system, which packages, the shortest import chain behind any file, and the one import that would drop the most.</p>
@@ -291,7 +318,7 @@ jobs:
   <section id="install" aria-labelledby="h-install">
     <div class="wrap">
       <div class="rule" aria-hidden="true"><svg><use href="#zig"/></svg></div>
-      <div class="head"><span class="num">06</span><h2 id="h-install">Install</h2></div>
+      <div class="head"><span class="num">07</span><h2 id="h-install">Install</h2></div>
       <p class="intro">Node 20 or newer. It runs on your machine, and nothing leaves it.</p>
       <div class="grid install">
         <div style="grid-column: span 12">
@@ -317,6 +344,97 @@ jobs:
 </footer>
 <div class="toast" role="status" aria-live="polite"></div>
 <script>
+  // The hero: six real Astro systems, one real crossing, and the route faultline suggested.
+  (() => {
+    const svg = document.getElementById("scene");
+    const NS = "http://www.w3.org/2000/svg";
+    const mk = (tag, attrs, text) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); if (text != null) e.textContent = text; svg.append(e); return e; };
+    const IMPORT = "import { warnMissingAdapter } from '../dev/adapter-validation.js'";
+    const LAYOUTS = {
+      wide: { vb: [1040, 420], bw: 200, bh: 60, boxes: { routing: [0, 44], app: [380, 44], dev: [840, 44], render: [0, 236], core: [380, 236], runtime: [840, 236] },
+        edges: [["routing", "r", "app", "l"], ["app", "b", "core", "t"], ["app", "b", "render", "t"], ["core", "r", "runtime", "l"], ["core", "r", "dev", "b"]],
+        fault: [[726, 12], [713, 36], [729, 60], [712, 84], [727, 108], [716, 132]], faultLabel: [704, 20, "end"],
+        code: [[0, 372], [0, 396]], split: false, stop: [654, 62], route: [676, 196] },
+      narrow: { vb: [360, 500], bw: 150, bh: 54, boxes: { app: [0, 40], dev: [210, 40], routing: [0, 186], core: [210, 186], render: [0, 318], runtime: [210, 318] },
+        edges: [["routing", "t", "app", "b"], ["app", "b", "core", "l"], ["core", "t", "dev", "b"], ["core", "b", "runtime", "t"], ["routing", "b", "render", "t"]],
+        fault: [[183, 22], [174, 46], [186, 70], [173, 94], [184, 118]], faultLabel: [360, 16, "end"],
+        code: [[0, 430], [0, 450], [0, 470]], split: true, stop: [180, 138], route: [278, 150],
+        // Through the gap between the rows, so the route never crosses the Routing box.
+        paths: { "app>core": "M75,94 C75,150 82,158 108,158 L178,158 C200,158 190,213 210,213" } },
+    };
+    const NAMES = { routing: ["Routing", "41 files"], app: ["Request handling", "59 files"], dev: ["Dev server", "25 files"], render: ["Render pipeline", "23 files"], core: ["Core utilities", "66 files"], runtime: ["Runtime", "76 files"] };
+    let el = {}, L;
+    function port(id, side) {
+      const [x, y] = L.boxes[id], w = L.bw, h = L.bh;
+      return side === "r" ? [x + w, y + h / 2] : side === "l" ? [x, y + h / 2] : side === "b" ? [x + w / 2, y + h] : [x + w / 2, y];
+    }
+    function curve(a, sa, b, sb) {
+      const [x1, y1] = port(a, sa), [x2, y2] = port(b, sb);
+      const d = { r: [1, 0], l: [-1, 0], b: [0, 1], t: [0, -1] };
+      const c = Math.max(28, Math.hypot(x2 - x1, y2 - y1) * 0.4);
+      return `M${x1},${y1} C${x1 + d[sa][0] * c},${y1 + d[sa][1] * c} ${x2 + d[sb][0] * c},${y2 + d[sb][1] * c} ${x2},${y2}`;
+    }
+    function build() {
+      const narrow = svg.clientWidth < 620;
+      L = LAYOUTS[narrow ? "narrow" : "wide"];
+      svg.innerHTML = "";
+      svg.classList.toggle("narrow", narrow);
+      svg.setAttribute("viewBox", `0 0 ${L.vb[0]} ${L.vb[1]}`);
+      const defs = mk("defs", {});
+      for (const [id, c] of [["ah-red", "#d63b35"], ["ah-green", "#178a5a"], ["ah-grey", "rgba(26,30,28,.4)"]]) {
+        const m = document.createElementNS(NS, "marker");
+        for (const [k, v] of Object.entries({ id, viewBox: "0 0 8 8", refX: "7", refY: "4", markerWidth: "7", markerHeight: "7", orient: "auto-start-reverse", markerUnits: "userSpaceOnUse" })) m.setAttribute(k, v);
+        const p = document.createElementNS(NS, "path"); p.setAttribute("d", "M0,0.5 L7.5,4 L0,7.5"); p.setAttribute("fill", "none"); p.setAttribute("stroke", c); p.setAttribute("stroke-width", "1.1");
+        m.append(p); defs.append(m);
+      }
+      el = { edges: [] };
+      const pathOf = (e) => (L.paths && L.paths[e[0] + ">" + e[2]]) || curve(...e);
+      for (const e of L.edges) el.edges.push(mk("path", { class: "edge", d: pathOf(e), "marker-end": "url(#ah-grey)" }));
+      el.fault = mk("path", { class: "fault", d: "M" + L.fault.map((p) => p.join(",")).join(" L") });
+      mk("text", { class: "label", x: L.faultLabel[0], y: L.faultLabel[1], "text-anchor": L.faultLabel[2] }, narrow ? "deny app → dev-server" : "deny app → dev-server");
+      el.cross = mk("path", { class: "cross", d: curve("app", "r", "dev", "l"), "marker-end": "url(#ah-red)" });
+      const ac = pathOf(["app", "b", "core", narrow ? "l" : "t"]), cd = curve("core", narrow ? "t" : "r", "dev", "b");
+      el.route1 = mk("path", { class: "route", d: ac }); el.route2 = mk("path", { class: "route", d: cd, "marker-end": "url(#ah-green)" });
+      for (const [id, [x, y]] of Object.entries(L.boxes)) {
+        mk("rect", { class: "box", x, y, width: L.bw, height: L.bh, rx: 3 });
+        mk("text", { class: "name", x: x + 14, y: y + (narrow ? 23 : 26) }, NAMES[id][0]);
+        mk("text", { class: "sub", x: x + 14, y: y + (narrow ? 40 : 45) }, NAMES[id][1]);
+      }
+      el.stop = mk("text", { class: "note", x: L.stop[0], y: L.stop[1], "text-anchor": "middle" }, "stopped");
+      el.routeLabel = mk("text", { class: "label", x: L.route[0], y: L.route[1], "text-anchor": narrow ? "end" : "middle" }, "allowed route");
+      el.file = mk("text", { class: "file", x: L.code[0][0], y: L.code[0][1] }, "core/app/origin-check.ts");
+      el.code = L.code.slice(1).map(([x, y]) => mk("text", { class: "code", x, y }, ""));
+      for (const k of ["cross", "route1", "route2"]) { const p = el[k]; p.len = p.getTotalLength(); p.style.strokeDasharray = `${p.len} ${p.len}`; }
+    }
+    const clamp = (x) => Math.max(0, Math.min(1, x));
+    const prog = (t, a, b) => clamp((t - a) / (b - a));
+    const ease = (x) => 1 - Math.pow(1 - x, 3);
+    const fade = (t, a, b, f = 0.35) => Math.min(prog(t, a, a + f), 1 - prog(t, b - f, b));
+    const draw = (p, x) => { p.style.strokeDashoffset = p.len * (1 - x); p.style.opacity = x > 0.001 ? 1 : 0; };
+    const LOOP = 9.5;
+    function frame(t) {
+      const typed = IMPORT.slice(0, Math.round(IMPORT.length * prog(t, 0.9, 2.2)));
+      const codeA = 1 - prog(t, 4.6, 5.0);
+      if (el.code.length === 1) el.code[0].textContent = typed;
+      else { const cut = IMPORT.indexOf(" from "); el.code[0].textContent = typed.slice(0, cut); el.code[1].textContent = typed.length > cut ? "  " + typed.slice(cut + 1) : ""; }
+      for (const c of el.code) c.style.opacity = codeA;
+      el.file.style.opacity = Math.max(0.35, codeA);
+      const crossIn = ease(prog(t, 2.35, 3.05)), crossOut = ease(prog(t, 4.5, 5.0));
+      draw(el.cross, crossIn * (1 - crossOut));
+      el.stop.style.opacity = fade(t, 3.1, 4.9);
+      draw(el.route1, ease(prog(t, 5.2, 5.9)) * (1 - prog(t, 8.6, 9.1)));
+      draw(el.route2, ease(prog(t, 5.8, 6.6)) * (1 - prog(t, 8.6, 9.1)));
+      el.routeLabel.style.opacity = fade(t, 6.5, 9.0);
+    }
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let start = performance.now();
+    function tick(now) { frame(((now - start) / 1000) % LOOP); requestAnimationFrame(tick); }
+    build();
+    if (still) frame(3.6); else requestAnimationFrame(tick);
+    let w = svg.clientWidth;
+    addEventListener("resize", () => { if ((svg.clientWidth < 620) !== (w < 620)) { build(); if (still) frame(3.6); } w = svg.clientWidth; });
+  })();
+
   const toast = document.querySelector(".toast");
   for (const b of document.querySelectorAll("[data-copy]")) {
     b.addEventListener("click", async () => {

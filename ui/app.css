@@ -292,7 +292,7 @@ button { font: inherit; color: inherit; }
 .fl-tick.k-structure { background: var(--new); height: 14px; top: 6px; }
 .fl-tick.k-fault { background: var(--fault); height: 16px; top: 5px; }
 .fl-thumb { position: absolute; top: 3px; width: 20px; height: 20px; margin-left: -10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: var(--shadow); pointer-events: none; }
-.fl-steps { list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.fl-steps { position: relative; list-style: none; margin: 0; padding: 0; max-height: 190px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
 .fl-step { display: grid; grid-template-columns: 8px 1fr auto; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 6px; cursor: pointer; border: 0; background: none; text-align: left; width: 100%; }
 .fl-step:hover { background: var(--surface); }
 .fl-step.is-current { background: var(--accent-soft); }

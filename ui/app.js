@@ -898,7 +898,7 @@
     input.addEventListener("keydown", (ev) => { if (ev.key === "Enter") list.querySelector(".fl-pick")?.click(); });
     fill();
     body.append(input, list);
-    requestAnimationFrame(() => input.focus());
+    requestAnimationFrame(() => input.focus({ preventScroll: true }));
   }
 
   function panelFootprint(body) {
@@ -1197,7 +1197,14 @@
       list.append(h("li", {}, btn));
     }
     wrap.append(list);
-    requestAnimationFrame(() => { list.querySelector(".is-current")?.scrollIntoView({ block: "nearest" }); });
+    // Scroll only the list, never the page around it (an embedded map must not move its host page).
+    requestAnimationFrame(() => {
+      const cur = list.querySelector(".is-current");
+      if (!cur) return;
+      const top = cur.offsetTop, bottom = top + cur.offsetHeight; // .fl-steps is positioned, so this is relative to the list
+      if (top < list.scrollTop) list.scrollTop = top;
+      else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = bottom - list.clientHeight;
+    });
     return wrap;
   }
 
