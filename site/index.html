@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>faultline: a live architecture map for any codebase</title>
+<meta name="description" content="faultline draws a live map of your codebase and stops coding agents at the boundary. Open source, local, any language, any agent.">
+<meta property="og:type" content="website">
+<meta property="og:title" content="faultline">
+<meta property="og:description" content="See the lines your code must not cross. A live architecture map that stops coding agents at the boundary.">
+<meta property="og:image" content="https://faultline.anzalabidi.dev/media/og.jpg">
+<meta property="og:url" content="https://faultline.anzalabidi.dev/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://faultline.anzalabidi.dev/media/og.jpg">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Crect x='1.5' y='3' width='8' height='6' rx='1.5' fill='none' stroke='%231a1e1c' stroke-width='1.6'/%3E%3Crect x='10.5' y='11' width='8' height='6' rx='1.5' fill='none' stroke='%231a1e1c' stroke-width='1.6'/%3E%3Cpath d='M2 16.5 L7 12.5 L10 14.5 L18 5.5' fill='none' stroke='%23d63b35' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --ground: #f3f4f1; --surface: #ffffff; --surface-2: #f8f9f7; --grid: #d9ddd7;
+    --ink: #1a1e1c; --ink-2: #3d4440; --muted: #646c67; --line: #d3d8d3; --line-strong: #aeb5b0;
+    --accent: #3553d1; --accent-soft: #e6eafb; --new: #178a5a; --new-soft: #dff2e8; --fault: #d63b35; --fault-soft: #fbe5e3; --touch: #c98200;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --gutter: clamp(16px, 4vw, 40px);
+    --maxw: 1120px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--ground); color: var(--ink); font: 17px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+  a { color: inherit; }
+  .wrap { max-width: var(--maxw); margin: 0 auto; padding-inline: var(--gutter); }
+  code, pre, .mono { font-family: var(--mono); }
+
+  /* Top */
+  header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10; background: color-mix(in srgb, var(--ground) 88%, transparent); backdrop-filter: saturate(1.2) blur(10px); border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent); }
+  header.top .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 600; font-size: 18px; letter-spacing: -0.01em; text-decoration: none; }
+  .brand svg { display: block; }
+  nav.links { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  nav.links a { text-decoration: none; font-size: 15px; color: var(--ink-2); padding: 6px 10px; border-radius: 8px; }
+  nav.links a:hover { background: var(--surface); }
+  nav.links a.gh { border: 1px solid var(--line); background: var(--surface); }
+  @media (max-width: 560px) { nav.links a.hide-sm { display: none; } }
+
+  /* Hero */
+  .hero { padding-block: clamp(48px, 9vw, 96px) 28px; text-align: center; }
+  .eyebrow { display: inline-flex; gap: 8px; align-items: center; font: 500 13px var(--mono); color: var(--muted); letter-spacing: 0.02em; border: 1px solid var(--line); background: var(--surface); border-radius: 99px; padding: 5px 12px; }
+  .eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: var(--new); display: inline-block; }
+  h1 { font-size: clamp(38px, 6.6vw, 72px); line-height: 1.04; letter-spacing: -0.035em; margin: 22px auto 0; max-width: 15ch; text-wrap: balance; font-weight: 600; }
+  h1 .red { color: var(--fault); }
+  .lede { font-size: clamp(18px, 2.2vw, 21px); color: var(--ink-2); max-width: 40ch; margin: 22px auto 0; text-wrap: balance; }
+  .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
+  .cmd { display: inline-flex; align-items: center; gap: 12px; font: 500 16px var(--mono); background: var(--ink); color: #f3f4f1; border-radius: 12px; padding: 12px 14px 12px 18px; border: 0; cursor: pointer; max-width: 100%; }
+  .cmd .p { color: #8f9892; }
+  .cmd .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmd .c { font: 600 12px var(--sans); background: #3a403d; color: #e7ebe8; border-radius: 7px; padding: 4px 9px; }
+  .btn { display: inline-flex; align-items: center; gap: 8px; font: 600 16px var(--sans); text-decoration: none; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; padding: 12px 18px; }
+  .btn:hover { border-color: var(--ink-2); }
+
+  /* The live map */
+  .stagebox { margin-top: 44px; }
+  .browser { background: var(--surface); border: 1px solid var(--line-strong); border-radius: 16px; overflow: hidden; box-shadow: 0 2px 4px rgba(26,30,28,.04), 0 24px 60px rgba(26,30,28,.12); }
+  .browser .bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); font: 500 13px var(--mono); color: var(--muted); }
+  .browser .dots { display: flex; gap: 6px; } .browser .dots i { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); display: block; }
+  .browser .bar .live { margin-left: auto; color: var(--new); display: flex; gap: 6px; align-items: center; font-family: var(--sans); font-weight: 600; font-size: 12.5px; }
+  .browser .bar .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--new); }
+  .browser iframe { display: block; width: 100%; height: clamp(560px, 62vw, 700px); border: 0; background: var(--ground); }
+  .note { font-size: 14.5px; color: var(--muted); margin: 14px auto 0; max-width: 70ch; text-align: center; }
+
+  /* Sections */
+  section.band { padding-block: clamp(56px, 9vw, 104px); }
+  .kicker { font: 600 13px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
+  h2 { font-size: clamp(28px, 4vw, 44px); line-height: 1.1; letter-spacing: -0.025em; margin: 12px 0 0; font-weight: 600; max-width: 22ch; text-wrap: balance; }
+  .sub { color: var(--ink-2); max-width: 60ch; margin: 16px 0 0; }
+
+  /* Proof */
+  .proof { border-block: 1px solid var(--line); background: var(--surface); }
+  .proof .grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 32px; align-items: end; }
+  .proof .stat .n { font: 600 clamp(64px, 10vw, 112px)/0.9 var(--sans); letter-spacing: -0.045em; font-variant-numeric: tabular-nums; }
+  .proof .stat .n small { font-size: 0.36em; color: var(--muted); letter-spacing: -0.01em; margin-left: 6px; }
+  .proof .stat .l { margin-top: 10px; color: var(--ink-2); font-size: 16px; }
+  .proof .fine { font-size: 14px; color: var(--muted); margin-top: 24px; grid-column: 1 / -1; }
+  .proof .fine a { color: var(--ink-2); }
+  @media (max-width: 760px) { .proof .grid { grid-template-columns: 1fr 1fr; } .proof .grid > :first-child { grid-column: 1 / -1; } }
+
+  /* Video */
+  .film video { width: 100%; max-width: 100%; display: block; border-radius: 16px; border: 1px solid var(--line-strong); background: var(--ground); box-shadow: 0 24px 60px rgba(26,30,28,.1); margin-top: 32px; aspect-ratio: 16 / 9; }
+
+  /* Steps */
+  .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 40px; }
+  .step { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .step .num { font: 600 13px var(--mono); color: var(--muted); }
+  .step h3 { margin: 0; font-size: 21px; letter-spacing: -0.015em; font-weight: 600; }
+  .step p { margin: 0; color: var(--ink-2); font-size: 15.5px; }
+  .step .media { margin-top: auto; }
+  pre.code { margin: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.65; overflow-x: auto; color: var(--ink-2); }
+  pre.code .k { color: var(--accent); } pre.code .r { color: var(--fault); font-weight: 600; } pre.code .g { color: var(--new); } pre.code .d { color: var(--muted); }
+  .step video { width: 100%; display: block; border-radius: 10px; border: 1px solid var(--line); }
+  @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
+
+  /* Two-column feature rows */
+  .row2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(28px, 5vw, 64px); align-items: center; }
+  .row2.flip > :first-child { order: 2; }
+  @media (max-width: 900px) { .row2, .row2.flip { grid-template-columns: 1fr; } .row2.flip > :first-child { order: 0; } }
+  .ticks { list-style: none; padding: 0; margin: 22px 0 0; display: flex; flex-direction: column; gap: 12px; }
+  .ticks li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; color: var(--ink-2); font-size: 16px; }
+  .ticks li::before { content: ""; width: 10px; height: 10px; border-radius: 3px; margin-top: 8px; background: var(--k, var(--accent)); }
+  .ticks li.g { --k: var(--new); } .ticks li.r { --k: var(--fault); }
+  .shot { width: 100%; display: block; border-radius: 14px; border: 1px solid var(--line-strong); box-shadow: 0 18px 48px rgba(26,30,28,.1); }
+
+  /* Agents */
+  .agents { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+  .agents span { font: 500 16px var(--sans); background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 8px 16px; }
+  .agents span.more { color: var(--muted); border-style: dashed; }
+  .langs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .langs span { font: 500 14px var(--mono); color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; }
+
+  /* Install */
+  .install { background: var(--ink); color: #e7ebe8; border-radius: 20px; padding: clamp(28px, 5vw, 56px); }
+  .install h2 { color: #fff; }
+  .install .sub { color: #b9c0bb; }
+  .install pre { margin: 28px 0 0; background: #101312; border: 1px solid #2b312e; border-radius: 12px; padding: 18px 20px; font-size: 14.5px; line-height: 1.85; overflow-x: auto; color: #d6dcd8; }
+  .install pre .d { color: #7f8983; } .install pre .p { color: #8f9892; }
+  .install .cta { justify-content: flex-start; }
+  .install .btn { background: #fff; color: var(--ink); border-color: #fff; }
+
+  footer { padding-block: 40px 56px; color: var(--muted); font-size: 14.5px; }
+  footer .wrap { display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+  footer a { color: var(--ink-2); text-decoration: none; }
+  footer a:hover { text-decoration: underline; }
+  footer .sp { margin-left: auto; }
+  .toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: #fff; padding: 8px 14px; border-radius: 99px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.on { opacity: 1; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="faultline home">
+      <svg width="22" height="22" viewBox="0 0 20 20" aria-hidden="true"><rect x="1.5" y="3" width="8" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="10.5" y="11" width="8" height="6" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M2 16.5 L7 12.5 L10 14.5 L18 5.5" fill="none" stroke="#d63b35" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      faultline
+    </a>
+    <nav class="links" aria-label="Main">
+      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#install">Install</a>
+      <a class="gh" href="https://github.com/anzal1/faultline">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <span class="eyebrow"><i></i>Open source · runs on your machine</span>
+    <h1>See the lines your code must not <span class="red">cross.</span></h1>
+    <p class="lede">faultline draws a live map of your codebase and stops coding agents at the boundary. Any language, any agent.</p>
+    <div class="cta">
+      <button class="cmd" data-copy="npx @anzalabidi/faultline init" aria-label="Copy install command"><span class="p">$</span><span class="t">npx @anzalabidi/faultline init</span><span class="c">Copy</span></button>
+      <a class="btn" href="https://github.com/anzal1/faultline">View on GitHub</a>
+    </div>
+    <div class="stagebox">
+      <div class="browser">
+        <div class="bar"><span class="dots"><i></i><i></i><i></i></span><span>withastro/astro</span><span class="live">interactive</span></div>
+        <iframe src="astro-map.html" title="A live faultline map of the Astro repository" loading="lazy"></iframe>
+      </div>
+      <p class="note">This is the real map of the Astro monorepo, with one simulated edit that crosses a rule. Click the red edge for the import behind it, or double-click a system to open it. The systems and rules are an example, not the Astro team's.</p>
+    </div>
+  </div>
+
+  <section class="band proof" aria-labelledby="proof-h">
+    <div class="wrap">
+      <div class="grid">
+        <div>
+          <div class="kicker">What it changes</div>
+          <h2 id="proof-h">Agents stop crossing the lines you draw.</h2>
+          <p class="sub" style="margin-top:14px">We gave coding agents real tasks in the Astro repo, where the tempting import crossed a declared rule, and counted how often they crossed it.</p>
+        </div>
+        <div class="stat"><div class="n" style="color:var(--fault)">5<small>of 6</small></div><div class="l">crossed it with the rules written in docs</div></div>
+        <div class="stat"><div class="n" style="color:var(--new)">0<small>of 6</small></div><div class="l">crossed it with faultline</div></div>
+        <p class="fine">A small pilot, six runs each. Runs with faultline used more tokens. The method, prompts and every diff are in <a href="https://github.com/anzal1/faultline/tree/main/bench/agent-ab">bench/agent-ab</a>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band film" aria-labelledby="film-h">
+    <div class="wrap">
+      <div class="kicker">37 seconds</div>
+      <h2 id="film-h">What happens when an agent crosses a line.</h2>
+      <video src="media/faultline.mp4" poster="media/poster.jpg" controls playsinline preload="none"></video>
+    </div>
+  </section>
+
+  <section class="band" id="how" aria-labelledby="how-h">
+    <div class="wrap">
+      <div class="kicker">How it works</div>
+      <h2 id="how-h">Draw the map once. It watches every edit after that.</h2>
+      <div class="steps">
+        <article class="step">
+          <span class="num">01</span>
+          <h3>Declare the systems</h3>
+          <p><code>fault init</code> drafts <code>faultline.yml</code> from your folders and imports. Rename the boxes and write the lines that matter.</p>
+          <div class="media"><pre class="code"><span class="k">systems</span>:
+  - { id: web, paths: [src/web/**] }
+  - { id: api, paths: [src/api/**] }
+  - { id: db,  paths: [src/db/**] }
+<span class="k">rules</span>:
+  - <span class="r">deny: web -> db</span>
+    reason: the UI goes through the API</pre></div>
+        </article>
+        <article class="step">
+          <span class="num">02</span>
+          <h3>Watch it live</h3>
+          <p><code>fault map</code> redraws as you or an agent edit. New dependencies turn green, crossed lines turn red, each with the import behind it.</p>
+          <div class="media"><video src="media/live-loop.mp4" autoplay muted loop playsinline preload="metadata" aria-label="The live map redrawing as files change"></video></div>
+        </article>
+        <article class="step">
+          <span class="num">03</span>
+          <h3>Stop the crossing</h3>
+          <p>Agents check the map before they write, and hear about a crossed line the moment it happens. <code>fault check</code> holds it in CI.</p>
+          <div class="media"><pre class="code"><span class="r">✗ Crosses a fault line:
+  Web UI → Database</span>
+  src/web/page.tsx imports query
+  from client.ts.
+  <span class="g">Allowed route: web → api → db</span></pre></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="agents-h" style="padding-top:0">
+    <div class="wrap row2">
+      <div>
+        <div class="kicker">Any agent, any model</div>
+        <h2 id="agents-h">One file every agent and every teammate respects.</h2>
+        <p class="sub"><code>fault setup</code> wires in the MCP server, hooks, AGENTS.md and a pre-commit check for the agents your repo uses. The same <code>faultline.yml</code> gates pull requests in CI.</p>
+        <div class="agents"><span>Claude Code</span><span>Codex</span><span>Cursor</span><span>Copilot</span><span>Gemini CLI</span><span>Kiro</span><span>Zed</span><span>opencode</span><span class="more">anything with a shell</span></div>
+      </div>
+      <pre class="code" aria-label="GitHub Actions setup"><span class="d"># .github/workflows/faultline.yml</span>
+<span class="k">on</span>: pull_request
+<span class="k">jobs</span>:
+  faultline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: anzal1/faultline@v0
+<span class="d"># Every PR gets one comment: what changed in
+# the architecture, and the imports behind it.
+# The check fails when a line is crossed.</span></pre>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="true-h" style="padding-top:0">
+    <div class="wrap row2 flip">
+      <div>
+        <div class="kicker">Stays true</div>
+        <h2 id="true-h">A map that keeps itself honest.</h2>
+        <p class="sub">A map nobody updates starts lying. So where code lives updates itself, and what may depend on what stays a human decision.</p>
+        <ul class="ticks">
+          <li class="g">New folders are placed in the system their imports go to.</li>
+          <li>Rules are suggested from your history: if A has never imported B in 200 commits, keep it that way?</li>
+          <li class="r">Only a person can loosen a rule. The agent hook refuses it, and CI fails until someone approves.</li>
+        </ul>
+      </div>
+      <pre class="code">$ fault sync
+<span class="k">1 folder outside every system</span>
+  billing-lab/**  (2 files) → Core utilities
+  <span class="d">2 of its 3 imports involve Core utilities</span>
+
+<span class="k">Suggested rules</span>
+  deny core-shared -> cli
+  <span class="d">CLI depends on Core utilities (38 imports)
+  and Core utilities has not imported CLI
+  in the last 200 commits.</span>
+
+$ fault check
+<span class="r">✖ Rules loosened</span>: this change makes
+  faultline.yml allow more than before.
+- rule "deny web -> db" was removed</pre>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="fp-h" style="padding-top:0">
+    <div class="wrap row2">
+      <div>
+        <div class="kicker">Footprint</div>
+        <h2 id="fp-h">See what your code costs to load.</h2>
+        <p class="sub">Pick an entry point and the map lights up everything it loads at startup: how much of each system, which packages, the shortest import chain behind any file, and the one import that would drop the most if you cut it.</p>
+        <p class="sub" style="font-size:15px;color:var(--muted)">On Astro's production entry it found zod imported at startup to read a couple of constants.</p>
+      </div>
+      <img class="shot" src="media/footprint.jpg" alt="The footprint view of Astro's production entry, with the import chain that loads zod highlighted" loading="lazy" width="1440" height="900">
+    </div>
+  </section>
+
+  <section class="band" id="install" aria-labelledby="install-h" style="padding-top:0">
+    <div class="wrap">
+      <div class="install">
+        <div class="kicker" style="color:#9fb0ff">Install</div>
+        <h2 id="install-h">Two minutes, one repo.</h2>
+        <p class="sub">Node 20 or newer. Nothing leaves your machine.</p>
+<pre><span class="p">$</span> npm install -g @anzalabidi/faultline
+<span class="p">$</span> fault init      <span class="d"># propose systems, write faultline.yml</span>
+<span class="p">$</span> fault map       <span class="d"># open the live map</span>
+<span class="p">$</span> fault setup     <span class="d"># connect your agents</span>
+<span class="p">$</span> fault check     <span class="d"># the CI gate</span></pre>
+        <div class="cta" style="margin-top:26px">
+          <a class="btn" href="https://github.com/anzal1/faultline#readme">Read the docs</a>
+        </div>
+        <div class="langs" aria-label="Supported languages"><span>TypeScript</span><span>JavaScript</span><span>Python</span><span>Go</span><span>Rust</span><span>Java</span><span>Kotlin</span><span>Scala</span><span>C#</span><span>C / C++</span><span>Ruby</span><span>PHP</span><span>Swift</span><span>Dart</span><span>Elixir</span><span>Lua</span><span>Haskell</span><span>Zig</span><span>Astro · Vue · Svelte</span></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>faultline · MIT</span>
+    <a href="https://github.com/anzal1/faultline">GitHub</a>
+    <a href="https://www.npmjs.com/package/@anzalabidi/faultline">npm</a>
+    <span class="sp">Built by <a href="https://github.com/anzal1">Anzal Abidi</a></span>
+  </div>
+</footer>
+<div class="toast" role="status" aria-live="polite"></div>
+<script>
+  const toast = document.querySelector(".toast");
+  for (const b of document.querySelectorAll("[data-copy]")) {
+    b.addEventListener("click", async () => {
+      const text = b.getAttribute("data-copy");
+      try { await navigator.clipboard.writeText(text); toast.textContent = "Copied"; }
+      catch { const r = document.createRange(); r.selectNodeContents(b.querySelector(".t")); const s = getSelection(); s.removeAllRanges(); s.addRange(r); toast.textContent = "Selected, press copy"; }
+      toast.classList.add("on"); setTimeout(() => toast.classList.remove("on"), 1400);
+    });
+  }
+</script>
+</body>
+</html>

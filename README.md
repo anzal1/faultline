@@ -4,7 +4,7 @@
 
 <sub>Recorded live on withastro/astro while real files changed. One edit crosses a fault line (production request handling importing the dev server), one adds an allowed dependency, and both are undone at the end. The systems and rules are an example map, not the Astro team's (<a href="examples/astro/faultline.yml">examples/astro</a>). Also: <a href="docs/footprint.mp4">what Astro's production entry loads at startup</a>.</sub>
 
-A living architecture map for any codebase. You declare the systems once. Every change after that, yours or any coding agent's, shows up as light on a map that never moves, as a sentence in the PR, and as a short answer the agent can read before it writes the wrong import.
+**[faultline.anzalabidi.dev](https://faultline.anzalabidi.dev)** · A living architecture map for any codebase. You declare the systems once. Every change after that, yours or any coding agent's, shows up as light on a map that never moves, as a sentence in the PR, and as a short answer the agent can read before it writes the wrong import.
 
 ```
 fault init        # propose systems from the repo, write faultline.yml
