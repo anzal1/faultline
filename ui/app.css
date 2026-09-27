@@ -356,6 +356,18 @@ button { font: inherit; color: inherit; }
 .fl-fbtn:hover { background: var(--accent-soft); }
 .fl-fbtn .p { overflow-wrap: anywhere; min-width: 0; }
 .fl-fbtn .x { color: var(--muted); white-space: nowrap; }
+.fl-loose { border: 1px solid color-mix(in srgb, var(--fault) 40%, transparent); background: var(--fault-soft); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
+.fl-loose .t { font-weight: 600; color: var(--fault); font-size: 13px; }
+.fl-loose ul { margin: 6px 0; padding-left: 18px; }
+.fl-loose .d { color: var(--muted); }
+.fl-sugs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.fl-sug { display: flex; gap: 10px; align-items: flex-start; justify-content: space-between; border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; }
+.fl-sug .b { min-width: 0; }
+.fl-sug .t { font-size: 13px; font-weight: 500; overflow-wrap: anywhere; }
+.fl-sug .t code { font-family: var(--mono); font-size: 12px; }
+.fl-sug .d { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.fl-sug-actions { display: flex; flex-direction: column; gap: 4px; }
+.fl-quiet { color: var(--muted); }
 .fl-toast { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); z-index: 3; background: var(--ink); color: var(--surface); padding: 6px 12px; border-radius: 999px; font-size: 12.5px; box-shadow: var(--shadow); pointer-events: none; }
 
 @media (max-width: 860px) {

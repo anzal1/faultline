@@ -32,6 +32,7 @@ This repo declares its architecture in \`faultline.yml\` (systems and fault line
 
 Use the faultline MCP tools, or the CLI: \`npx -y @anzalabidi/faultline <command>\`.
 Fault lines are hard rules. If \`check\` reports one, route the import through an allowed system (it suggests one) instead of editing \`faultline.yml\`.
+Adding a folder? Run \`fault sync --apply\` to place it in the right system. Never remove, narrow or work around a \`deny\` rule: only the user changes rules, and \`fault check\` fails when they get looser.
 ${END}`;
 
 function readJson(file: string): Record<string, any> {
@@ -85,6 +86,7 @@ const WRITERS: Writer[] = [
           list.push({ ...(matcher ? { matcher } : {}), hooks: [hook] });
         }
       };
+      add("PreToolUse", "Edit|Write|MultiEdit");
       add("PostToolUse", "Edit|Write|MultiEdit");
       add("Stop");
       writeJson(settingsFile, settings);

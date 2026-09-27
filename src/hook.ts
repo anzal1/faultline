@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Args } from "./cli.js";
-import { loadConfig, systemName } from "./config.js";
+import { configPath, loadConfig, parseConfig, systemName } from "./config.js";
+import { configAt, describeLoosenings, loosenings } from "./maintain.js";
 import { findRoot, Workspace } from "./context.js";
 import { allowedRoute } from "./agent.js";
 import { findings, importPhrase } from "./describe.js";
@@ -10,7 +11,7 @@ import { aggregate } from "./graph.js";
 import { compileRules } from "./rules.js";
 import { green, dim, bold } from "./render/text.js";
 import { readServerInfo } from "./server.js";
-import { git } from "./source.js";
+import { git, makeSource } from "./source.js";
 
 interface HookEvent {
   hook_event_name?: string;
@@ -19,7 +20,8 @@ interface HookEvent {
   cwd?: string;
   workspace_roots?: string[];
   tool_name?: string;
-  tool_input?: { file_path?: string };
+  tool_input?: { file_path?: string; content?: string; old_string?: string; new_string?: string; replace_all?: boolean; edits?: { old_string: string; new_string: string; replace_all?: boolean }[] };
+  file_path?: string;
 }
 
 type AgentKind = "claude" | "codex" | "copilot" | "cursor" | "generic";
@@ -99,6 +101,42 @@ export async function cmdHook(args: Args) {
   const root = findRoot(event.cwd ?? event.workspace_roots?.[0] ?? process.cwd());
   const config = loadConfig(root);
   if (!config) return; // repo not using faultline: stay silent
+  const name0 = (event.hook_event_name ?? "").toLowerCase();
+
+  // Rules are the user's. An agent may place code (fault sync --apply), never loosen a rule.
+  const target = event.tool_input?.file_path ?? event.file_path;
+  const touchesConfig = !!target && path.resolve(root, target) === configPath(root);
+  const filesNow = async () => [...(await makeSource(root, undefined).list()).keys()];
+  if (name0 === "pretooluse") {
+    if (!touchesConfig) return;
+    const proposed = proposedText(configPath(root), event);
+    if (proposed === null) return;
+    let after;
+    try {
+      after = parseConfig(proposed);
+      for (const r of after.rules) if (!/->/.test(String(r.deny ?? ""))) throw new Error(`rule ${JSON.stringify(r)} has no "deny: from -> to"`);
+    } catch (e) {
+      // A broken faultline.yml enforces nothing, so it counts as loosening every rule at once.
+      const reason = `faultline: this edit would leave faultline.yml invalid (${(e as Error).message}), which switches every rule off. Keep the file valid; only the user may remove rules.`;
+      process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } }));
+      return;
+    }
+    const loose = loosenings(config, after, await filesNow());
+    if (!loose.length) return;
+    const reason = `faultline: this edit would loosen faultline.yml, and only the user may do that:\n${describeLoosenings(loose)}\nLeave the rules as they are and route the code through an allowed system, or ask the user to change the rule.`;
+    process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: reason } }));
+    return;
+  }
+  if (touchesConfig && (name0 === "posttooluse" || name0 === "aftertool")) {
+    const committed = configAt(root, "HEAD");
+    const loose = committed ? loosenings(committed, config, await filesNow()) : [];
+    if (loose.length) {
+      const reason = `faultline: faultline.yml now allows more than the committed version:\n${describeLoosenings(loose)}\nOnly the user may loosen rules. Restore them (git checkout -- faultline.yml brings back the committed version) unless the user asked for this.`;
+      if (agent === "codex" || agent === "copilot") process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: reason }, systemMessage: "faultline: rules loosened" }));
+      else process.stdout.write(JSON.stringify({ decision: "block", reason, continueOnBlock: true, systemMessage: "faultline: rules loosened" }));
+      return;
+    }
+  }
   const ws = new Workspace(root, config);
   const sessionId = event.session_id ?? event.conversation_id ?? "default";
   const session = loadSession(root, sessionId);
@@ -172,6 +210,26 @@ export async function cmdHook(args: Args) {
   }
 }
 
+/** What faultline.yml would contain after a Write, Edit or MultiEdit; null when it cannot tell. */
+function proposedText(file: string, event: HookEvent): string | null {
+  const input = event.tool_input ?? {};
+  const tool = (event.tool_name ?? "").toLowerCase();
+  if (typeof input.content === "string" && (tool === "write" || !input.old_string)) return input.content;
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return null;
+  }
+  const edits = input.edits ?? (typeof input.old_string === "string" ? [{ old_string: input.old_string, new_string: input.new_string ?? "", replace_all: input.replace_all }] : []);
+  if (!edits.length) return null;
+  for (const e of edits) {
+    if (!text.includes(e.old_string)) return null;
+    text = e.replace_all ? text.split(e.old_string).join(e.new_string) : text.replace(e.old_string, e.new_string);
+  }
+  return text;
+}
+
 export async function cmdInstallHook(args: Args) {
   const root = findRoot(process.cwd());
   const file = path.join(root, ".claude", "settings.json");
@@ -189,6 +247,7 @@ export async function cmdInstallHook(args: Args) {
   };
   const a = ensure("PostToolUse", "Edit|Write|MultiEdit");
   const b = ensure("Stop", undefined);
+  ensure("PreToolUse", "Edit|Write|MultiEdit");
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, JSON.stringify(settings, null, 2) + "\n");
   if (!a && !b) console.log(dim("faultline hooks were already installed in .claude/settings.json"));

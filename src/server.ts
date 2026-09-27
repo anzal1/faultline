@@ -11,6 +11,7 @@ import { headline } from "./describe.js";
 import { diffModels } from "./diff.js";
 import { bold, dim, green } from "./render/text.js";
 import { git, resolveRef, shortRef } from "./source.js";
+import { applyPlacements, configAt, loosenings, suggestPlacements, suggestRules, type Placement, type RuleSuggestion } from "./maintain.js";
 import { buildState, type SnapshotMeta } from "./state.js";
 import type { Config, Model } from "./types.js";
 
@@ -42,6 +43,9 @@ export class LiveSession {
   private pending = false;
   private headSha = "";
   private turnCount = 0;
+  placements: Placement[] = [];
+  private ruleSuggestions: RuleSuggestion[] = [];
+  private scanning = false;
 
   constructor(readonly ws: Workspace, readonly baseRef: string) {}
 
@@ -51,6 +55,36 @@ export class LiveSession {
     const model = await this.ws.model(sha);
     this.base = { meta: { id: "base", label: this.baseRef === sha ? shortRef(this.ws.root, sha) : `${this.baseRef} (${shortRef(this.ws.root, sha)})`, kind: "base", ref: sha, time: Date.now(), subject: subject(this.ws.root, sha) }, model };
     await this.rebuild();
+    void this.scanRules();
+  }
+
+  /** Rule suggestions read history, so they run in the background and land on the next redraw. */
+  async scanRules() {
+    if (this.scanning) return;
+    this.scanning = true;
+    try {
+      this.ruleSuggestions = await suggestRules(this.ws);
+    } catch {
+      this.ruleSuggestions = [];
+    } finally {
+      this.scanning = false;
+    }
+    this.schedule(0);
+  }
+
+  private dismissed(): string[] {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(this.ws.root, ".faultline", "dismissed.json"), "utf8"));
+    } catch {
+      return [];
+    }
+  }
+
+  dismiss(deny: string) {
+    const file = path.join(this.ws.root, ".faultline", "dismissed.json");
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify([...new Set([...this.dismissed(), deny.replace(/\s+/g, "")])]));
+    this.schedule(0);
   }
 
   private currentHead(): string {
@@ -79,10 +113,20 @@ export class LiveSession {
       if (head && head !== this.headSha) {
         // A commit landed mid-session: freeze it as a step on the timeline.
         this.headSha = head;
+        void this.scanRules();
         this.turns.push({ meta: { id: `c-${head.slice(0, 8)}`, label: shortRef(this.ws.root, head), kind: "commit", ref: head, time: Date.now(), subject: subject(this.ws.root, head) }, model });
       }
       this.live = { meta: { id: "live", label: "working tree", kind: "live", ref: "WORKTREE", time: Date.now(), subject: "Working tree (now)" }, model };
+      this.placements = suggestPlacements(model, this.ws.config);
+      const committed = configAt(this.ws.root, "HEAD");
+      const hidden = new Set(this.dismissed());
+      const maintenance = {
+        placements: this.placements,
+        rules: this.ruleSuggestions.filter((r) => !hidden.has(r.deny.replace(/\s+/g, "")) && !this.ws.config.rules.some((x) => x.deny.replace(/\s+/g, "") === r.deny.replace(/\s+/g, ""))),
+        loosened: committed ? loosenings(committed, this.ws.config, Object.keys(model.files)) : [],
+      };
       const state = await buildState({
+        maintenance,
         root: this.ws.root,
         repo: repoName(this.ws.root),
         config: this.ws.config,
@@ -115,6 +159,7 @@ export class LiveSession {
 
   async configChanged() {
     this.ws.reloadConfig();
+    void this.scanRules();
     this.base = { ...this.base, model: reassign(this.base.model, this.ws.config) };
     this.turns = this.turns.map((t) => ({ ...t, model: reassign(t.model, this.ws.config) }));
     await this.rebuild();
@@ -223,6 +268,30 @@ export async function cmdMap(args: Args) {
         session.schedule(0);
       } else {
         addRuleToFile(ws.root, `${data.from} -> ${data.to}`, data.reason);
+        await session.configChanged();
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ ok: true }));
+    }
+    if ((url.pathname === "/api/place" || url.pathname === "/api/dismiss") && req.method === "POST") {
+      let body = "";
+      for await (const chunk of req) body += chunk;
+      let data: { glob?: string; deny?: string } = {};
+      try {
+        data = JSON.parse(body || "{}");
+      } catch {
+        // empty
+      }
+      if (url.pathname === "/api/dismiss") {
+        if (typeof data.deny !== "string") return void res.writeHead(400).end();
+        session.dismiss(data.deny);
+      } else {
+        const p = session.placements.find((x) => x.glob === data.glob);
+        if (!p) {
+          res.writeHead(404, { "content-type": "application/json" });
+          return res.end(JSON.stringify({ error: "no such suggestion" }));
+        }
+        applyPlacements(ws.root, [p]);
         await session.configChanged();
       }
       res.writeHead(200, { "content-type": "application/json" });

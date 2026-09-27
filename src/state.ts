@@ -4,6 +4,7 @@ import { diffModels } from "./diff.js";
 import { aggregate } from "./graph.js";
 import { systemLayout, type Layout } from "./layout.js";
 import { detectEntries, type Entry } from "./footprint.js";
+import type { Loosening, Placement, RuleSuggestion } from "./maintain.js";
 import { loadPlan, type Plan } from "./plan.js";
 import type { AggEdge, Config, Delta, FileEdge, Model } from "./types.js";
 
@@ -70,6 +71,14 @@ export interface MapState {
   plan: Plan;
   /** Files the repo's manifests start from, for the footprint view. */
   entries: Entry[];
+  /** Live mode: new folders to place, rules worth adding, and any loosening since the last commit. */
+  maintenance?: Maintenance;
+}
+
+export interface Maintenance {
+  placements: Placement[];
+  rules: RuleSuggestion[];
+  loosened: Loosening[];
 }
 
 export function systemViews(model: Model, config: Config): SystemView[] {
@@ -145,6 +154,7 @@ export async function buildState(opts: {
   mode: "live" | "static";
   compact?: boolean;
   persistLayout?: boolean;
+  maintenance?: Maintenance;
 }): Promise<MapState> {
   const { config, models } = opts;
   const base = models[0].model;
@@ -188,6 +198,7 @@ export async function buildState(opts: {
     graph: compactGraph(models[models.length - 1].model),
     plan: loadPlan(opts.root),
     entries: entriesFor(opts.root, Object.keys(models[models.length - 1].model.files)),
+    ...(opts.maintenance ? { maintenance: opts.maintenance } : {}),
   };
   return state;
 }

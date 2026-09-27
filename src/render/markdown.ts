@@ -62,15 +62,20 @@ export function mermaidDelta(delta: Delta, head: Model, config: Config, maxNodes
   return lines.join("\n");
 }
 
-export function renderMarkdown(delta: Delta, head: Model, config: Config, opts: { mapUrl?: string; plan?: Plan } = {}): string {
+export function renderMarkdown(delta: Delta, head: Model, config: Config, opts: { mapUrl?: string; plan?: Plan; loosened?: { detail: string }[] } = {}): string {
   const f = findings(delta, config);
   const n = (id: string) => systemName(config, id);
   const faults = f.filter((x) => x.severity === "fault");
   const rest = f.filter((x) => x.severity !== "fault");
   const out: string[] = [COMMENT_MARKER];
   const icon = faults.length ? "🔴" : f.some((x) => x.severity === "structure") ? "🟡" : "🟢";
-  out.push(`### ${icon} faultline: ${headline(delta, config)}`);
+  out.push(`### ${opts.loosened?.length ? "🔴" : icon} faultline: ${headline(delta, config)}`);
   out.push("");
+  if (opts.loosened?.length) {
+    out.push("**This change loosens `faultline.yml`.** A maintainer should approve it before merge:");
+    for (const l of opts.loosened) out.push(`- ${l.detail}`);
+    out.push("");
+  }
   for (const x of faults) out.push(`- **${x.title}**${x.detail ? `  \n  ${x.detail}` : ""}`);
   for (const x of rest.slice(0, 10)) out.push(`- ${x.severity === "structure" ? "**" + x.title + "**" : x.title}${x.detail ? `  \n  ${x.detail}` : ""}`);
   if (rest.length > 10) out.push(`- …and ${rest.length - 10} smaller changes`);

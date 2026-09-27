@@ -15,8 +15,8 @@ systems:
     paths: [src/lang/**]
   - id: proposer
     name: System proposer
-    description: Drafts faultline.yml from a directory tree.
-    paths: [src/propose.ts]
+    description: Drafts faultline.yml from a directory tree and keeps it true as the code moves.
+    paths: [src/propose.ts, src/maintain.ts]
   - id: reports
     name: Reports
     description: Findings in plain English, PR comments, map state, layout and exports.

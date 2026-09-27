@@ -104,6 +104,7 @@ export function parseConfig(text: string): Config {
     if (s.id === UNMAPPED) throw new Error(`faultline.yml: "${UNMAPPED}" is reserved`);
     ids.add(s.id);
   }
+  if (raw.rules !== undefined && raw.rules !== null && !Array.isArray(raw.rules)) throw new Error("faultline.yml: rules must be a list of { deny: \"from -> to\" }");
   return {
     version: 1,
     systems,
@@ -128,7 +129,7 @@ export function serializeConfig(config: Config): string {
     "# faultline.yml: the declared architecture of this repo.\n" +
     "# Systems are the boxes on the map. Each file belongs to the most specific system whose paths match it.\n" +
     "# Rules turn an edge into a fault line: `deny: web -> db` fails `fault check` when that import appears.\n";
-  return header + doc.toString({ lineWidth: 0 });
+  return header + doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 }
 
 /** Adds a deny rule to faultline.yml, keeping the file's comments and layout. */
@@ -144,7 +145,7 @@ export function addRuleToFile(root: string, deny: string, reason?: string): bool
   const entry: Record<string, string> = { deny };
   if (reason) entry.reason = reason;
   rules.add(doc.createNode(entry));
-  fs.writeFileSync(file, doc.toString({ lineWidth: 0 }));
+  fs.writeFileSync(file, doc.toString({ lineWidth: 0, flowCollectionPadding: false }));
   return true;
 }
 

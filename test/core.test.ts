@@ -7,6 +7,7 @@ import { Assigner, parseConfig } from "../src/config.js";
 import { Workspace } from "../src/context.js";
 import { findings, headline } from "../src/describe.js";
 import { detectEntries, dominators, footprint } from "../src/footprint.js";
+import { loosenings, suggestPlacements } from "../src/maintain.js";
 import { aggregate, cycles } from "../src/graph.js";
 import { parseFile } from "../src/parse.js";
 import { proposeHeuristic, simplifyGlobs } from "../src/propose.js";
@@ -350,5 +351,67 @@ describe("cli", () => {
     expect(html).toContain("window.__FAULTLINE_STATE__");
     expect(html).not.toMatch(/<script src=/);
     fs.rmSync(out);
+  });
+
+  it("fault check fails when faultline.yml gets looser, even with no import crossing it", () => {
+    const file = path.join(repo, "faultline.yml");
+    const original = fs.readFileSync(file, "utf8");
+    fs.writeFileSync(file, original.replace(/rules:[\s\S]*$/, "rules: []\n"));
+    try {
+      const r = spawnSync("node", [CLI, "check"], { cwd: repo, encoding: "utf8" });
+      expect(r.status).toBe(1);
+      expect(r.stdout).toContain('rule "deny web -> db" was removed');
+      const ok = spawnSync("node", [CLI, "check", "--allow-loosening"], { cwd: repo, encoding: "utf8" });
+      expect(ok.status).toBe(0);
+    } finally {
+      fs.writeFileSync(file, original);
+    }
+  });
+
+  it("the Claude Code PreToolUse hook refuses an edit that deletes a rule, and allows placing code", () => {
+    const file = path.join(repo, "faultline.yml");
+    const run = (input: Record<string, unknown>) => spawnSync("node", [CLI, "hook", "--agent", "claude"], { cwd: repo, input: JSON.stringify({ hook_event_name: "PreToolUse", session_id: "t2", cwd: repo, tool_name: "Edit", tool_input: { file_path: file, ...input } }), encoding: "utf8" });
+    const denied = run({ old_string: "  - deny: web -> db\n    reason: The UI talks to the API, never the database\n", new_string: "" });
+    const json = JSON.parse(denied.stdout);
+    expect(json.hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(json.hookSpecificOutput.permissionDecisionReason).toContain("only the user may do that");
+    // Deleting half a rule breaks the file, which would switch every rule off: refused too.
+    const broken = JSON.parse(run({ old_string: "  - deny: web -> db\n", new_string: "" }).stdout);
+    expect(broken.hookSpecificOutput.permissionDecision).toBe("deny");
+    const allowed = run({ old_string: 'paths: ["src/api/**"]', new_string: 'paths: ["src/api/**", "src/jobs/**"]' });
+    expect(allowed.stdout).toBe("");
+  });
+});
+
+describe("maintenance", () => {
+  const cfg = (rules: string, extra = "") => parseConfig(`version: 1
+systems:
+  - { id: web, name: Web, paths: ["src/web/**"] }
+  - { id: api, name: API, paths: ["src/api/**"${extra}] }
+  - { id: db, name: DB, paths: ["src/db/**"] }
+rules:
+${rules}`);
+  const files = ["src/web/a.ts", "src/api/b.ts", "src/db/c.ts", "src/db/legacy/d.ts"];
+
+  it("finds removed rules, narrowed globs, and files walked into another system", () => {
+    const before = cfg("  - deny: \"{web,api} -> db\"\n");
+    expect(loosenings(before, cfg("  - deny: web -> db\n"), files).map((l) => l.detail)).toEqual(['api -> db is no longer denied (rule "deny {web,api} -> db" changed)']);
+    expect(loosenings(before, cfg("  []\n"), files)[0].detail).toBe('rule "deny {web,api} -> db" was removed');
+    const moved = loosenings(before, cfg('  - deny: "{web,api} -> db"\n', ', "src/db/legacy/**"'), files);
+    expect(moved.map((l) => l.detail)).toEqual(["1 file moved from db to api (e.g. src/db/legacy/d.ts)"]);
+    expect(loosenings(before, cfg('  - deny: "{web,api} -> db"\n  - deny: db -> web\n'), files)).toEqual([]);
+  });
+
+  it("places a new folder where its imports go, and proposes a system for one that stands alone", () => {
+    const config = cfg("  []\n");
+    const f = (p: string, system: string) => [p, { path: p, hash: p, system, module: system + "/x" }];
+    const model = {
+      ref: "x", label: "x", externals: [],
+      files: Object.fromEntries([f("src/api/b.ts", "api"), f("src/db/c.ts", "db"), f("src/jobs/run.ts", "unmapped"), f("src/jobs/sched.ts", "unmapped"), f("tools/x.ts", "unmapped"), f("tools/y.ts", "unmapped"), f("tools/z.ts", "unmapped")]),
+      edges: [["src/jobs/run.ts", "src/api/b.ts"], ["src/jobs/sched.ts", "src/api/b.ts"], ["src/jobs/run.ts", "src/db/c.ts"], ["src/api/b.ts", "src/jobs/sched.ts"]].map(([from, to]) => ({ from, to, names: ["x"], typeOnly: false, kind: "static" as const, confidence: "exact" as const })),
+    };
+    const out = suggestPlacements(model, config);
+    expect(out.find((p) => p.glob === "src/jobs/**")).toMatchObject({ system: "api", files: 2 });
+    expect(out.find((p) => p.glob === "tools/**")).toMatchObject({ create: { id: "tools", name: "Tools" }, files: 3 });
   });
 });

@@ -115,7 +115,7 @@ export async function place(ws: Workspace, filePath: string, imports: string[] =
   const edges = aggregate(model, "system");
   const lines: string[] = [];
   if (a.system === UNMAPPED) {
-    lines.push(`${rel} is outside every declared system. Put it under an existing system's paths, or add a system to faultline.yml.`);
+    lines.push(`${rel} is outside every declared system. Run \`fault sync --apply\` to place its folder where its imports go (this never loosens a rule).`);
     return lines.join("\n");
   }
   lines.push(`${rel} → ${a.system} (${n(a.system)}), module ${a.module.slice(a.system.length + 1)}${exists ? "" : ", new file"}.`);

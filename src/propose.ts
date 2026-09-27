@@ -447,7 +447,7 @@ export function slug(s: string): string {
 
 const ACRONYMS = new Set(["cli", "api", "ui", "db", "sdk", "css", "jsx", "html", "i18n", "ssr", "rpc", "http", "sql", "io", "vm", "ast", "mdx"]);
 
-function humanize(s: string): string {
+export function humanize(s: string): string {
   const words = s.replace(/[-_]+/g, " ").trim().split(" ").map((w) => (ACRONYMS.has(w.toLowerCase()) ? w.toUpperCase() : w));
   const out = words.join(" ");
   return out.charAt(0).toUpperCase() + out.slice(1);

@@ -12,7 +12,8 @@ fault map         # open the live map; it redraws as files change
 fault setup       # connect your agents: MCP, hooks, AGENTS.md, pre-commit
 fault diff main   # what this branch did to the structure, in plain English
 fault footprint   # what an entry point loads at startup, and where to cut it
-fault check main  # exit 1 if it crosses a fault line (CI)
+fault check main  # exit 1 if it crosses a fault line or loosens a rule (CI)
+fault sync        # place new folders, suggest rules learned from history
 ```
 
 ```
@@ -174,6 +175,35 @@ fault plan "api -> billing: invoices need customer data"
 
 Planned dependencies live in `.faultline/plan.yml`, next to the code. The map draws them dotted until the imports exist. The PR comment lists each one as built or not yet, and flags any new dependency between systems that nobody planned.
 
+## Keeping the map true
+
+A map nobody updates starts lying, and a lying map gets ignored. faultline splits the upkeep in two, on purpose.
+
+**Where code lives is a fact, so it keeps itself current.** A new folder outside every system shows up on the map with a suggestion: join the system its imports go to, or become a new one. `fault sync --apply` (or *Place* on the map) writes it. Agents are told to run it; placing code never loosens a rule.
+
+```
+$ fault sync
+1 folder outside every system
+  billing-lab/**  (2 files) → Core utilities  2 of its 3 imports to and from other systems involve Core utilities
+
+Suggested rules (a person decides these; add one with fault sync --rule "a -> b")
+  deny core-shared -> cli  CLI depends on Core utilities (38 imports) and Core utilities has not imported CLI in the last 200 commits. Keeps it one-way.
+```
+
+**What may depend on what is a decision, so only people make it.** Rules are suggested from history: if A imports B and B has never imported A in the last 200 commits, faultline offers `deny B -> A` to keep it one-way. You add it with one click or `fault sync --rule`. Nothing adds a rule on its own.
+
+**Loosening needs a human.** An agent that hits a red line could simply delete it. So:
+
+- The Claude Code hook refuses any edit that removes or narrows a rule, moves files out of a system, ignores mapped files, or leaves `faultline.yml` invalid. Other agents are told right after the edit.
+- `fault check` judges a change against the stricter of the two `faultline.yml` versions, and fails when the file gets looser. Approve it with `--allow-loosening` or `FAULTLINE_ALLOW_LOOSENING=1`.
+- The pull request comment says so first, and the GitHub Action fails unless `allow-loosening` is set, for example from a label:
+
+```yaml
+      - uses: anzal1/faultline@v0
+        with:
+          allow-loosening: ${{ contains(github.event.pull_request.labels.*.name, 'faultline-approved') }}
+```
+
 ## In CI
 
 ```yaml
@@ -191,7 +221,7 @@ jobs:
       - uses: anzal1/faultline@v0
 ```
 
-The action runs from its own source, so it needs no package registry. Every pull request gets one sticky comment: the headline, each structural change as a sentence, a Mermaid map of only the part that changed (GitHub renders it inline), plan versus actual, and the imports behind each change. The check fails when the PR crosses a fault line. On GitLab, Bitbucket or anything else, run `fault diff "$BASE" "$HEAD" --format markdown` and post the output.
+The action runs from its own source, so it needs no package registry. Every pull request gets one sticky comment: the headline, each structural change as a sentence, a Mermaid map of only the part that changed (GitHub renders it inline), plan versus actual, and the imports behind each change. The check fails when the PR crosses a fault line or loosens `faultline.yml` without approval. On GitLab, Bitbucket or anything else, run `fault diff "$BASE" "$HEAD" --format markdown` and post the output.
 
 ## How it works
 

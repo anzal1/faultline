@@ -7,6 +7,9 @@ inputs:
   fail-on-fault:
     description: Fail the job when the pull request crosses a fault line declared in faultline.yml.
     default: "true"
+  allow-loosening:
+    description: Let the pull request loosen faultline.yml (remove or narrow a rule, move files between systems). Set it from an approval label, e.g. contains(github.event.pull_request.labels.*.name, 'faultline-approved').
+    default: "false"
   comment:
     description: Post or update a sticky comment on the pull request.
     default: "true"
@@ -42,7 +45,9 @@ runs:
         $FAULT diff "$BASE" "$HEAD_SHA" --format markdown -o "$RUNNER_TEMP/faultline.md"
         $FAULT diff "$BASE" "$HEAD_SHA" --format json -o "$RUNNER_TEMP/faultline.json"
         FAULTS=$(node -e "const d=require(process.argv[1]); console.log(d.delta.violations.introduced.length)" "$RUNNER_TEMP/faultline.json")
+        LOOSENED=$(node -e "const d=require(process.argv[1]); console.log((d.loosened||[]).length)" "$RUNNER_TEMP/faultline.json")
         echo "faults=$FAULTS" >> "$GITHUB_OUTPUT"
+        echo "loosened=$LOOSENED" >> "$GITHUB_OUTPUT"
         cat "$RUNNER_TEMP/faultline.md" >> "$GITHUB_STEP_SUMMARY"
     - name: Comment
       if: inputs.comment == 'true' && github.event.pull_request
@@ -64,4 +69,10 @@ runs:
       shell: bash
       run: |
         echo "::error title=faultline::This pull request crosses ${{ steps.diff.outputs.faults }} fault line(s) declared in faultline.yml."
+        exit 1
+    - name: Rules check
+      if: inputs.fail-on-fault == 'true' && inputs.allow-loosening != 'true' && steps.diff.outputs.loosened != '0'
+      shell: bash
+      run: |
+        echo "::error title=faultline::This pull request loosens faultline.yml in ${{ steps.diff.outputs.loosened }} way(s). A maintainer should approve it (for example with the label that sets allow-loosening)."
         exit 1

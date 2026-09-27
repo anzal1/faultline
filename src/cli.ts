@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { configPath, DEFAULT_IGNORE, serializeConfig, systemName } from "./config.js";
+import { addRuleToFile, configPath, DEFAULT_IGNORE, serializeConfig, systemName } from "./config.js";
+import { applyPlacements, configAt, describeLoosenings, loosenings, suggestPlacements, suggestRules } from "./maintain.js";
 import { findRoot, Workspace } from "./context.js";
 import { findings } from "./describe.js";
 import { aggregate } from "./graph.js";
@@ -20,8 +21,10 @@ const HELP = `${bold("fault")}: a living architecture map for any codebase, any 
   fault map [--base <ref>]           Open the live map; it redraws as you (or an agent) edit
   fault diff [base] [head]           Structural diff. Defaults: HEAD → working tree
         --format text|markdown|json|agent  --verbose  --out <file>
-  fault check [base] [head]          Exit 1 if the change crosses a fault line (CI, pre-commit)
-        --staged  --strict (also fail on new cycles)  --quiet
+  fault check [base] [head]          Exit 1 if the change crosses a fault line or loosens a rule
+        --staged  --strict (also fail on new cycles)  --quiet  --allow-loosening
+  fault sync [--apply]               Place new folders into systems and suggest rules from history
+        --rule "a -> b"  add a suggested rule   --no-rules  skip the history scan
   fault export [base] [head] -o f    Self-contained HTML map of a change, to share
   fault replay <from> [to] -o f      Replay history commit by commit as a map timeline
         --max <n>  --worktree [label]   end with uncommitted changes
@@ -46,7 +49,7 @@ export interface Args {
 
 export function parseArgs(argv: string[]): Args {
   const out: Args = { _: [], flags: {} };
-  const valued = new Set(["why", "format", "out", "o", "base", "port", "max", "target", "label", "head", "title", "worktree", "map-url", "note", "agent", "remove", "cwd"]);
+  const valued = new Set(["why", "rule", "format", "out", "o", "base", "port", "max", "target", "label", "head", "title", "worktree", "map-url", "note", "agent", "remove", "cwd"]);
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a.startsWith("--")) {
@@ -119,12 +122,13 @@ async function cmdDiff(args: Args) {
   const ws = Workspace.open();
   const [base, head] = args._;
   const { delta, headModel } = await ws.diff(base, head);
+  const loosened = rulesLoosened(ws.root, base ?? "HEAD", head, Object.keys(headModel.files));
   const format = String(args.flags.format ?? "text");
   let out: string;
-  if (format === "json") out = JSON.stringify({ delta, findings: findings(delta, ws.config) }, null, 2);
-  else if (format === "agent") out = withCost(agentDiff(delta, ws.config, headModel, ws.root));
-  else if (format === "markdown" || format === "md") out = renderMarkdown(delta, headModel, ws.config, { mapUrl: args.flags["map-url"] as string | undefined, plan: loadPlan(ws.root) });
-  else out = renderText(delta, ws.config, { verbose: !!args.flags.verbose });
+  if (format === "json") out = JSON.stringify({ delta, findings: findings(delta, ws.config), loosened }, null, 2);
+  else if (format === "agent") out = withCost(agentDiff(delta, ws.config, headModel, ws.root) + (loosened.length ? `\nfaultline.yml loosened (a person must approve):\n${describeLoosenings(loosened)}` : ""));
+  else if (format === "markdown" || format === "md") out = renderMarkdown(delta, headModel, ws.config, { mapUrl: args.flags["map-url"] as string | undefined, plan: loadPlan(ws.root), loosened });
+  else out = renderText(delta, ws.config, { verbose: !!args.flags.verbose }) + (loosened.length ? `\n\n${yellow("! faultline.yml loosened")}\n${describeLoosenings(loosened)}` : "");
   const target = (args.flags.out ?? args.flags.o) as string | undefined;
   if (target) fs.writeFileSync(target, out + "\n");
   else console.log(out);
@@ -137,14 +141,61 @@ async function cmdCheck(args: Args) {
     base = base ?? "HEAD";
     head = INDEX;
   }
-  const { delta } = await ws.diff(base, head);
-  const failed = delta.violations.introduced.length > 0 || (args.flags.strict && delta.cycles.added.length > 0);
+  const { delta, headModel } = await ws.diff(base, head);
+  // Rules are judged by the stricter of the two versions of faultline.yml: a change cannot get
+  // past a fault line by deleting it in the same commit.
+  const loosened = rulesLoosened(ws.root, base ?? "HEAD", head, Object.keys(headModel.files));
+  const allow = !!args.flags["allow-loosening"] || process.env.FAULTLINE_ALLOW_LOOSENING === "1";
+  const crossed = delta.violations.introduced.length > 0;
+  const failed = crossed || (args.flags.strict && delta.cycles.added.length > 0) || (loosened.length > 0 && !allow);
   if (!args.flags.quiet || failed) console.log(renderText(delta, ws.config, { verbose: true }));
+  if (loosened.length) {
+    console.log(`\n${allow ? yellow("! Rules loosened (allowed)") : red("✖ Rules loosened")}: this change makes faultline.yml allow more than before.`);
+    console.log(describeLoosenings(loosened));
+    if (!allow) console.log(dim("A person should approve this. Re-run with --allow-loosening, or set FAULTLINE_ALLOW_LOOSENING=1 in CI once approved."));
+  }
   if (failed) {
-    console.log(`\n${red("✖ fault check failed")}: this change crosses a declared fault line.`);
+    console.log(`\n${red("✖ fault check failed")}: ${crossed ? "this change crosses a declared fault line." : loosened.length && !allow ? "this change loosens the declared rules." : "this change adds a cycle."}`);
     process.exit(1);
   }
   if (!args.flags.quiet) console.log(`\n${green("✓ fault check passed")}`);
+}
+
+/** What faultline.yml at `head` allows that it did not at `base`. */
+function rulesLoosened(root: string, base: string, head: string | undefined, files: string[]) {
+  const before = configAt(root, base);
+  const after = configAt(root, head);
+  if (!before || !after) return [];
+  return loosenings(before, after, files);
+}
+
+async function cmdSync(args: Args) {
+  const ws = Workspace.open();
+  const model = await ws.model(undefined);
+  const placements = suggestPlacements(model, ws.config);
+  const json = args.flags.format === "json";
+  const wantRules = !args.flags["no-rules"];
+  const rules = wantRules ? await suggestRules(ws) : [];
+  if (json) return console.log(JSON.stringify({ placements, rules }, null, 2));
+  if (!placements.length) console.log(dim("Every file belongs to a system."));
+  else {
+    console.log(bold(`${placements.length} folder${placements.length === 1 ? "" : "s"} outside every system`));
+    for (const p of placements) console.log(`  ${p.glob}  ${dim(`(${p.files} file${p.files === 1 ? "" : "s"})`)} → ${p.system ? systemName(ws.config, p.system) : `new system "${p.create!.name}"`}${dim(`  ${p.why}`)}`);
+    if (args.flags.apply) {
+      const n = applyPlacements(ws.root, placements);
+      console.log(`${green("✓")} Added ${n} path${n === 1 ? "" : "s"} to faultline.yml.`);
+    } else console.log(dim("  Apply with: fault sync --apply   (placing code never loosens a rule; agents may run it)"));
+  }
+  if (rules.length) {
+    console.log(`\n${bold("Suggested rules")} ${dim("(a person decides these; add one with fault sync --rule \"a -> b\")")}`);
+    for (const r of rules) console.log(`  deny ${r.deny}${dim(`  ${r.reason}`)}`);
+  }
+  const add = typeof args.flags.rule === "string" ? args.flags.rule : undefined;
+  if (add) {
+    const hit = rules.find((r) => r.deny.replace(/\s+/g, "") === add.replace(/\s+/g, ""));
+    const ok = addRuleToFile(ws.root, add.trim(), hit?.reason ?? (typeof args.flags.why === "string" ? args.flags.why : undefined));
+    console.log(ok ? `${green("✓")} Added rule deny ${add.trim()}` : dim(`deny ${add.trim()} is already in faultline.yml`));
+  }
 }
 
 async function cmdOverview(args: Args) {
@@ -264,6 +315,8 @@ async function main() {
       return cmdOverview(args);
     case "footprint":
       return cmdFootprint(args);
+    case "sync":
+      return cmdSync(args);
     case "place":
       return cmdPlace(args);
     case "plan":

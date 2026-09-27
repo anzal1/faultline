@@ -767,10 +767,42 @@
     els.panel.replaceChildren(body, timeline());
   }
 
+  /** Keeping the map true: folders to place, rules worth adding, and loosened rules. */
+  function maintenance(body) {
+    const m = S.maintenance;
+    if (!m || ui.snap !== S.snapshots.length - 1) return;
+    if (m.loosened.length) {
+      body.append(h("div", { class: "fl-loose" },
+        h("div", { class: "t", text: "faultline.yml allows more than the last commit" }),
+        h("ul", {}, m.loosened.map((l) => h("li", { text: l.detail }))),
+        h("div", { class: "d", text: "fault check fails on this until someone approves it. Agents are told not to do it." })));
+    }
+    if (!m.placements.length && !m.rules.length) return;
+    const rows = [];
+    for (const p of m.placements.slice(0, 5)) {
+      rows.push(h("li", { class: "fl-sug" },
+        h("div", { class: "b" },
+          h("div", { class: "t" }, h("code", { text: p.glob }), p.system ? ` → ${sysName(p.system)}` : ` → new system “${p.create.name}”`),
+          h("div", { class: "d", text: `${plural(p.files, "file")} outside every system. ${p.why[0].toUpperCase()}${p.why.slice(1)}.` })),
+        h("button", { class: "fl-btn", onclick: async () => { await post("/api/place", { glob: p.glob }); toast(`Placed ${p.glob}`); } }, "Place")));
+    }
+    for (const r of m.rules.slice(0, 5)) {
+      rows.push(h("li", { class: "fl-sug" },
+        h("div", { class: "b" },
+          h("div", { class: "t" }, "Deny ", h("b", { text: `${sysName(r.from)} → ${sysName(r.to)}` })),
+          h("div", { class: "d", text: r.reason })),
+        h("div", { class: "fl-sug-actions" },
+          h("button", { class: "fl-btn", onclick: async () => { await post("/api/rule", { from: r.from, to: r.to, reason: r.reason }); toast(`Rule added: deny ${r.deny}`); } }, "Add rule"),
+          h("button", { class: "fl-btn fl-quiet", title: "Don't suggest this again", onclick: async () => { await post("/api/dismiss", { deny: r.deny }); } }, "Dismiss"))));
+    }
+    body.append(section("Keep the map true", h("ul", { class: "fl-sugs" }, rows)));
+  }
+
   function panelSummary(body) {
     const d = dv();
     const sn = snap();
     if (S.note) body.append(h("div", { class: "fl-note" }, ...S.note.split(/\n\n+/).map((para) => h("p", { text: para }))));
+    maintenance(body);
     if (!d) {
       const n = systemsAt().filter((x) => x.files > 0);
       const files = n.reduce((a, x) => a + x.files, 0);
