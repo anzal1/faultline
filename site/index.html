@@ -52,12 +52,13 @@
   h1 .red { color: var(--fault); }
   .lede { font-size: clamp(18px, 2.2vw, 21px); color: var(--ink-2); max-width: 40ch; margin: 22px auto 0; text-wrap: balance; }
   .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 30px; }
-  .cmd { display: inline-flex; align-items: center; gap: 12px; font: 500 16px var(--mono); background: var(--ink); color: #f3f4f1; border-radius: 12px; padding: 12px 14px 12px 18px; border: 0; cursor: pointer; max-width: 100%; }
+  .cmd { display: inline-flex; align-items: center; gap: 12px; min-width: 0; font: 500 16px var(--mono); background: var(--ink); color: #f3f4f1; border-radius: 12px; padding: 12px 14px 12px 18px; border: 0; cursor: pointer; max-width: 100%; }
   .cmd .p { color: #8f9892; }
   .cmd .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .cmd .c { font: 600 12px var(--sans); background: #3a403d; color: #e7ebe8; border-radius: 7px; padding: 4px 9px; }
   .btn { display: inline-flex; align-items: center; gap: 8px; font: 600 16px var(--sans); text-decoration: none; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 12px; padding: 12px 18px; }
   .btn:hover { border-color: var(--ink-2); }
+  @media (max-width: 480px) { .cmd { font-size: 14px; width: 100%; justify-content: space-between; } .cta .btn { width: 100%; justify-content: center; } }
 
   /* The live map */
   .stagebox { margin-top: 44px; }
@@ -67,10 +68,12 @@
   .browser .bar .live { margin-left: auto; color: var(--new); display: flex; gap: 6px; align-items: center; font-family: var(--sans); font-weight: 600; font-size: 12.5px; }
   .browser .bar .live::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--new); }
   .browser iframe { display: block; width: 100%; height: clamp(560px, 62vw, 700px); border: 0; background: var(--ground); }
+  @media (max-width: 860px) { .browser iframe { height: 820px; } }
   .note { font-size: 14.5px; color: var(--muted); margin: 14px auto 0; max-width: 70ch; text-align: center; }
 
   /* Sections */
   section.band { padding-block: clamp(56px, 9vw, 104px); }
+  section[id] { scroll-margin-top: 72px; }
   .kicker { font: 600 13px var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); }
   h2 { font-size: clamp(28px, 4vw, 44px); line-height: 1.1; letter-spacing: -0.025em; margin: 12px 0 0; font-weight: 600; max-width: 22ch; text-wrap: balance; }
   .sub { color: var(--ink-2); max-width: 60ch; margin: 16px 0 0; }
@@ -95,9 +98,9 @@
   .step h3 { margin: 0; font-size: 21px; letter-spacing: -0.015em; font-weight: 600; }
   .step p { margin: 0; color: var(--ink-2); font-size: 15.5px; }
   .step .media { margin-top: auto; }
-  pre.code { margin: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.65; overflow-x: auto; color: var(--ink-2); }
+  pre.code { margin: 0; background: var(--surface-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink-2); }
   pre.code .k { color: var(--accent); } pre.code .r { color: var(--fault); font-weight: 600; } pre.code .g { color: var(--new); } pre.code .d { color: var(--muted); }
-  .step video { width: 100%; display: block; border-radius: 10px; border: 1px solid var(--line); }
+  .step video { width: 100%; height: auto; aspect-ratio: 820 / 520; object-fit: cover; display: block; border-radius: 10px; border: 1px solid var(--line); background: var(--ground); }
   @media (max-width: 900px) { .steps { grid-template-columns: 1fr; } }
 
   /* Two-column feature rows */
@@ -108,7 +111,7 @@
   .ticks li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; color: var(--ink-2); font-size: 16px; }
   .ticks li::before { content: ""; width: 10px; height: 10px; border-radius: 3px; margin-top: 8px; background: var(--k, var(--accent)); }
   .ticks li.g { --k: var(--new); } .ticks li.r { --k: var(--fault); }
-  .shot { width: 100%; display: block; border-radius: 14px; border: 1px solid var(--line-strong); box-shadow: 0 18px 48px rgba(26,30,28,.1); }
+  .shot { width: 100%; height: auto; display: block; border-radius: 14px; border: 1px solid var(--line-strong); box-shadow: 0 18px 48px rgba(26,30,28,.1); }
 
   /* Agents */
   .agents { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
@@ -121,7 +124,8 @@
   .install { background: var(--ink); color: #e7ebe8; border-radius: 20px; padding: clamp(28px, 5vw, 56px); }
   .install h2 { color: #fff; }
   .install .sub { color: #b9c0bb; }
-  .install pre { margin: 28px 0 0; background: #101312; border: 1px solid #2b312e; border-radius: 12px; padding: 18px 20px; font-size: 14.5px; line-height: 1.85; overflow-x: auto; color: #d6dcd8; }
+  .install pre { margin: 28px 0 0; background: #101312; border: 1px solid #2b312e; border-radius: 12px; padding: 18px 20px; font-size: 14.5px; line-height: 1.85; white-space: pre-wrap; overflow-wrap: anywhere; color: #d6dcd8; }
+  @media (max-width: 640px) { .install pre { font-size: 13px; } .install pre .d { display: block; padding-left: 1.4em; } }
   .install pre .d { color: #7f8983; } .install pre .p { color: #8f9892; }
   .install .cta { justify-content: flex-start; }
   .install .btn { background: #fff; color: var(--ink); border-color: #fff; }
@@ -206,7 +210,7 @@
   - { id: db,  paths: [src/db/**] }
 <span class="k">rules</span>:
   - <span class="r">deny: web -> db</span>
-    reason: the UI goes through the API</pre></div>
+    reason: UI goes through the API</pre></div>
         </article>
         <article class="step">
           <span class="num">02</span>
@@ -245,9 +249,9 @@
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: anzal1/faultline@v0
-<span class="d"># Every PR gets one comment: what changed in
-# the architecture, and the imports behind it.
-# The check fails when a line is crossed.</span></pre>
+<span class="d"># One comment per PR: what changed
+# in the architecture, and why.
+# Fails when a line is crossed.</span></pre>
     </div>
   </section>
 
@@ -289,7 +293,7 @@ $ fault check
         <p class="sub">Pick an entry point and the map lights up everything it loads at startup: how much of each system, which packages, the shortest import chain behind any file, and the one import that would drop the most if you cut it.</p>
         <p class="sub" style="font-size:15px;color:var(--muted)">On Astro's production entry it found zod imported at startup to read a couple of constants.</p>
       </div>
-      <img class="shot" src="media/footprint.jpg" alt="The footprint view of Astro's production entry, with the import chain that loads zod highlighted" loading="lazy" width="1440" height="900">
+      <img class="shot" src="media/footprint.jpg" alt="The footprint view of Astro's production entry, with the import chain that loads zod highlighted" loading="lazy" width="1060" height="840">
     </div>
   </section>
 
